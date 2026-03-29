@@ -97,7 +97,7 @@ Quando perguntar sobre treino de ontem, responda APENAS com:
 Quando perguntar sobre um exercício específico de ontem ou outro dia (ex: "supino de ontem"), responda APENAS com:
 {"action":"get_history","days_ago":1,"exercise":"supino"}
 
-Quando o usuário quiser mudar o nome (ex: "muda meu nome", "me chama de X", "quero mudar meu nome para X"), responda APENAS com JSON:
+Quando o usuário quiser corrigir ou mudar seu nome, mesmo de forma indireta (ex: "meu nome não é X é Y", "me chama de X", "quero mudar meu nome para X", "pode me chamar de X", "meu nome é X!", "na verdade me chamo X", "errei, meu nome é X"), responda APENAS com JSON:
 {"action":"change_name","name":"novo nome"}
 
 Para qualquer outra mensagem, responda normalmente em texto curto e amigável. Nunca use blocos de código.`,
@@ -132,31 +132,20 @@ module.exports = async function handler(req, res) {
   if (!message) return res.status(200).json({ ok: true });
 
   console.log(`Mensagem de ${phone}: ${message}`);
-  res.status(200).json({ ok: true });
 
   try {
     const { user, isNew } = await getOrCreateUser(phone);
 
     if (isNew) {
-      await sendWhatsApp(
-        phone,
-        `Olá! 👋 Eu sou seu assistente de treino pessoal.\n\nAntes de começar, como você quer ser chamado?`,
-      );
-      return;
+      await sendWhatsApp(phone, `Olá! 👋 Eu sou seu assistente de treino pessoal.\n\nAntes de começar, como você quer ser chamado?`);
+      return res.status(200).json({ ok: true });
     }
 
     if (user.awaiting_name && !user.name) {
       const name = message.split(" ")[0];
-      await supabase
-        .from("users")
-        .update({ name, awaiting_name: false })
-        .eq("phone", phone);
-
-      await sendWhatsApp(
-        phone,
-        `Perfeito, *${name}*! 💪\n\nAgora eu vou te ajudar a registrar e acompanhar seus treinos.\n\nVocê pode fazer várias coisas comigo 👇\n\n🏋️ *Registrar treino*\nExemplo: "supino 3x12 25kg"\n\n📊 *Ver treinos anteriores*\nEx: "o que treinei hoje?"\nEx: "treino de ontem"\nEx: "último supino"\n\n🤖 *Receber sugestão de treino*\nEx: "me recomenda um treino de peito"\n\n💡 Pode mandar mensagem do jeito que quiser — eu entendo 😉\n\nBora treinar! 🚀`,
-      );
-      return;
+      await supabase.from("users").update({ name, awaiting_name: false }).eq("phone", phone);
+      await sendWhatsApp(phone, `Perfeito, *${name}*! 💪\n\nAgora eu vou te ajudar a registrar e acompanhar seus treinos.\n\nVocê pode fazer várias coisas comigo 👇\n\n🏋️ *Registrar treino*\nExemplo: "supino 3x12 25kg"\n\n📊 *Ver treinos anteriores*\nEx: "o que treinei hoje?"\nEx: "treino de ontem"\nEx: "último supino"\n\n🤖 *Receber sugestão de treino*\nEx: "me recomenda um treino de peito"\n\n💡 Pode mandar mensagem do jeito que quiser — eu entendo 😉\n\nBora treinar! 🚀`);
+      return res.status(200).json({ ok: true });
     }
 
     const reply = await askClaude(message, user.name);
@@ -174,8 +163,7 @@ module.exports = async function handler(req, res) {
           const lastWeight = history[0].weight_kg;
           const maxWeight = Math.max(...history.map((w) => w.weight_kg));
           const last3 = history.slice(0, 3);
-          const avgLast3 =
-            last3.reduce((sum, w) => sum + w.weight_kg, 0) / last3.length;
+          const avgLast3 = last3.reduce((sum, w) => sum + w.weight_kg, 0) / last3.length;
           const diff = parsed.weight_kg - lastWeight;
 
           if (parsed.weight_kg > maxWeight) {
@@ -198,61 +186,39 @@ module.exports = async function handler(req, res) {
         }
 
         await sendWhatsApp(phone, msg);
-        return;
+        return res.status(200).json({ ok: true });
       }
 
       if (parsed.action === "get_history") {
         const daysAgo = parsed.days_ago || 0;
-        const workouts = await getWorkoutsByDate(
-          phone,
-          parsed.exercise || null,
-          daysAgo,
-        );
-        const label =
-          daysAgo === 0
-            ? "hoje"
-            : daysAgo === 1
-              ? "ontem"
-              : `${daysAgo} dias atrás`;
+        const workouts = await getWorkoutsByDate(phone, parsed.exercise || null, daysAgo);
+        const label = daysAgo === 0 ? "hoje" : daysAgo === 1 ? "ontem" : `${daysAgo} dias atrás`;
 
         if (!workouts.length) {
-          await sendWhatsApp(
-            phone,
-            `Nenhum exercício registrado ${label}, ${user.name}. 💪`,
-          );
+          await sendWhatsApp(phone, `Nenhum exercício registrado ${label}, ${user.name}. 💪`);
         } else {
-          const list = workouts
-            .map(
-              (w, i) =>
-                `${i + 1}. *${w.exercise}* — ${w.sets}x${w.reps} @ ${w.weight_kg}kg`,
-            )
-            .join("\n");
-          await sendWhatsApp(
-            phone,
-            `🏋️ *Treino de ${label}, ${user.name}:*\n\n${list}`,
-          );
+          const list = workouts.map((w, i) => `${i + 1}. *${w.exercise}* — ${w.sets}x${w.reps} @ ${w.weight_kg}kg`).join("\n");
+          await sendWhatsApp(phone, `🏋️ *Treino de ${label}, ${user.name}:*\n\n${list}`);
         }
-        return;
+        return res.status(200).json({ ok: true });
       }
 
       if (parsed.action === "change_name") {
         const newName = parsed.name;
-        await supabase
-          .from("users")
-          .update({ name: newName })
-          .eq("phone", phone);
-        await sendWhatsApp(
-          phone,
-          `✅ Pronto! Agora vou te chamar de *${newName}*. 😊`,
-        );
-        return;
+        await supabase.from("users").update({ name: newName }).eq("phone", phone);
+        await sendWhatsApp(phone, `✅ Pronto! Agora vou te chamar de *${newName}*. 😊`);
+        return res.status(200).json({ ok: true });
       }
 
       await sendWhatsApp(phone, reply);
+
     } catch {
       await sendWhatsApp(phone, reply);
     }
+
   } catch (err) {
     console.error("Erro completo:", err.response?.data || err.message || err);
   }
+
+  return res.status(200).json({ ok: true });
 };
