@@ -97,7 +97,7 @@ async function sendWhatsApp(phone, message) {
   await axios.post(ZAPI_URL, { phone, message });
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { phone, text } = req.body;
