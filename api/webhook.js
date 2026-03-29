@@ -231,16 +231,28 @@ async function askClaudeSuggest(muscleGroup, history, userName) {
 
 async function sendWhatsApp(phone, message) {
   console.log(`Enviando para ${phone}: ${message}`);
+
   const INSTANCE_ID = process.env.ZAPI_INSTANCE_ID?.trim();
   const TOKEN = process.env.ZAPI_TOKEN?.trim();
+  const CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN?.trim();
 
-  console.log("INSTANCE_ID RAW:", JSON.stringify(INSTANCE_ID));
-  console.log("TOKEN RAW:", JSON.stringify(TOKEN));
-  console.log(
-    "ZAPI URL:",
-    `https://api.z-api.io/instances/${INSTANCE_ID}/token/${TOKEN}/send-text`,
+  const url = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${TOKEN}/send-text`;
+
+  console.log("INSTANCE_ID:", JSON.stringify(INSTANCE_ID));
+  console.log("TOKEN:", JSON.stringify(TOKEN));
+  console.log("CLIENT_TOKEN existe?", !!CLIENT_TOKEN);
+  console.log("URL:", url);
+
+  await axios.post(
+    url,
+    { phone, message },
+    {
+      headers: {
+        "Client-Token": CLIENT_TOKEN,
+        "Content-Type": "application/json",
+      },
+    }
   );
-  await axios.post(ZAPI_URL, { phone, message });
 }
 
 function formatWorkout(w) {
