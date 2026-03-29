@@ -1,0 +1,56 @@
+{
+  "info": {
+    "name": "Assistente Academia",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Registrar treino",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"phone\":\"5511999999999\",\"text\":{\"message\":\"supino 3x12 25kg\"}}"
+        },
+        "url": { "raw": "http://localhost:3000/webhook", "host": ["localhost"], "port": "3000", "path": ["webhook"] }
+      }
+    },
+    {
+      "name": "Rosca direta",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"phone\":\"5511999999999\",\"text\":{\"message\":\"rosca direta 4x10 15kg\"}}"
+        },
+        "url": { "raw": "http://localhost:3000/webhook", "host": ["localhost"], "port": "3000", "path": ["webhook"] }
+      }
+    },
+    {
+      "name": "Treino de hoje",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"phone\":\"5511999999999\",\"text\":{\"message\":\"meu treino de hoje\"}}"
+        },
+        "url": { "raw": "http://localhost:3000/webhook", "host": ["localhost"], "port": "3000", "path": ["webhook"] }
+      }
+    },
+    {
+      "name": "Mensagem livre",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"phone\":\"5511999999999\",\"text\":{\"message\":\"qual músculo o supino trabalha?\"}}"
+        },
+        "url": { "raw": "http://localhost:3000/webhook", "host": ["localhost"], "port": "3000", "path": ["webhook"] }
+      }
+    }
+  ]
+}
