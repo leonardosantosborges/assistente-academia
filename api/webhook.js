@@ -1,4 +1,8 @@
 const axios = require("axios");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const FormData = require("form-data");
 const { createClient } = require("@supabase/supabase-js");
 
 const supabase = createClient(
@@ -39,6 +43,139 @@ function formatDateLabel(dateStr) {
   const dayName = DAY_NAMES[date.getDay()];
   const formatted = date.toLocaleDateString("pt-BR");
   return `${dayName} - ${formatted}`;
+}
+
+function getIncomingText(reqBody) {
+  return reqBody?.text?.message?.trim() || null;
+}
+
+function getAudioUrl(reqBody) {
+  return (
+    reqBody?.audio?.audioUrl ||
+    reqBody?.audio?.url ||
+    reqBody?.message?.audio?.url ||
+    reqBody?.message?.audioUrl ||
+    reqBody?.voice?.url ||
+    reqBody?.file?.url ||
+    null
+  );
+}
+
+function isAudioMessage(reqBody) {
+  const type = String(reqBody?.type || reqBody?.messageType || "").toLowerCase();
+  return type.includes("audio") || !!getAudioUrl(reqBody);
+}
+
+function inferAudioExtension(url) {
+  const cleanUrl = String(url || "").split("?")[0].toLowerCase();
+  if (cleanUrl.endsWith(".mp3")) return "mp3";
+  if (cleanUrl.endsWith(".wav")) return "wav";
+  if (cleanUrl.endsWith(".mpeg")) return "mpeg";
+  if (cleanUrl.endsWith(".mpga")) return "mpga";
+  if (cleanUrl.endsWith(".m4a")) return "m4a";
+  if (cleanUrl.endsWith(".webm")) return "webm";
+  return "ogg";
+}
+
+async function downloadAudioFile(url) {
+  const extension = inferAudioExtension(url);
+  const tempFilePath = path.join(os.tmpdir(), `fitlog-audio-${Date.now()}.${extension}`);
+
+  const response = await axios({
+    method: "GET",
+    url,
+    responseType: "stream",
+    headers: {
+      "Client-Token": process.env.ZAPI_CLIENT_TOKEN?.trim(),
+    },
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
+  });
+
+  await new Promise((resolve, reject) => {
+    const writer = fs.createWriteStream(tempFilePath);
+    response.data.pipe(writer);
+    writer.on("finish", resolve);
+    writer.on("error", reject);
+  });
+
+  return tempFilePath;
+}
+
+async function transcribeAudio(filePath) {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY não configurada para transcrição");
+  }
+
+  const form = new FormData();
+  form.append("file", fs.createReadStream(filePath));
+  form.append("model", "whisper-1");
+  form.append("language", "pt");
+
+  const response = await axios.post(
+    "https://api.openai.com/v1/audio/transcriptions",
+    form,
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        ...form.getHeaders(),
+      },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+    }
+  );
+
+  return response.data?.text?.trim() || "";
+}
+
+async function getMessageFromWebhook(reqBody) {
+  const textMessage = getIncomingText(reqBody);
+  if (textMessage) {
+    return {
+      message: textMessage,
+      source: "text",
+      transcription: null,
+    };
+  }
+
+  if (isAudioMessage(reqBody)) {
+    const audioUrl = getAudioUrl(reqBody);
+
+    if (!audioUrl) {
+      return {
+        message: null,
+        source: "audio",
+        transcription: null,
+        error: "Áudio recebido, mas sem URL para download.",
+      };
+    }
+
+    const filePath = await downloadAudioFile(audioUrl);
+
+    try {
+      const transcription = await transcribeAudio(filePath);
+
+      return {
+        message: transcription,
+        source: "audio",
+        transcription,
+        error: null,
+      };
+    } finally {
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      } catch {}
+    }
+  }
+
+  return {
+    message: null,
+    source: "unknown",
+    transcription: null,
+    error: null,
+  };
 }
 
 // ── Banco ────────────────────────────────────────────────────
@@ -104,8 +241,12 @@ async function saveMultipleWorkouts(phone, workouts, daysAgo = 0, gym = null) {
   const rows = workouts.map((w) => {
     const ne = normalizeExercise(w.exercise);
     return {
-      user_phone: phone, exercise: ne, sets: w.sets, reps: w.reps,
-      weight_kg: w.weight_kg || null, gym: w.gym || gym || null,
+      user_phone: phone,
+      exercise: ne,
+      sets: w.sets,
+      reps: w.reps,
+      weight_kg: w.weight_kg || null,
+      gym: w.gym || gym || null,
       muscle_group: getMuscleGroup(ne),
       created_at: daysAgo > 0 ? date.toISOString() : undefined,
     };
@@ -393,16 +534,30 @@ function formatWaterBar(totalMl, goalMl) {
 
 // ── Handler ──────────────────────────────────────────────────
 module.exports = async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
-  const { phone, text } = req.body;
-  const message = text?.message?.trim();
-  if (!message) return res.status(200).json({ ok: true });
+  const { phone } = req.body;
+  const incoming = await getMessageFromWebhook(req.body);
+  const message = incoming.message?.trim();
 
-  console.log(`Mensagem de ${phone}: ${message}`);
+  if (!message) {
+    if (incoming.source === "audio" && incoming.error) {
+      console.log("Áudio recebido sem transcrição:", incoming.error);
+    }
+    return res.status(200).json({ ok: true });
+  }
+
+  console.log(`Mensagem de ${phone} [${incoming.source}]: ${message}`);
 
   try {
     const { user, isNew } = await getOrCreateUser(phone);
+
+    if (incoming.source === "audio" && incoming.transcription) {
+      console.log("Transcrição do áudio:", incoming.transcription);
+      await sendWhatsApp(phone, `🎧 Entendi seu áudio como:\n"${message}"`);
+    }
 
     if (isNew) {
       await sendWhatsApp(phone, `Olá! 👋 Eu sou seu assistente de treino pessoal.\n\nAntes de começar, como você quer ser chamado?`);
@@ -430,13 +585,11 @@ module.exports = async function handler(req, res) {
 
     const daysAgo = parsed.days_ago || 0;
 
-    // ── get_name ──
     if (parsed.action === "get_name") {
       await sendWhatsApp(phone, user.name ? `Seu nome salvo é *${user.name}* 💪` : `Ainda não tenho seu nome. Como quer ser chamado?`);
       return res.status(200).json({ ok: true });
     }
 
-    // ── change_name ──
     if (parsed.action === "change_name") {
       const newName = String(parsed.name || "").trim();
       if (!newName) {
@@ -448,7 +601,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── save_workout ──
     if (parsed.action === "save_workout") {
       const normalizedExercise = normalizeExercise(parsed.exercise);
       const history = await getWorkoutHistory(phone, normalizedExercise);
@@ -482,7 +634,6 @@ module.exports = async function handler(req, res) {
           }
         }
 
-        // Aviso de mudança nas repetições
         if (lastReps !== null && parsed.reps !== lastReps) {
           const repDiff = parsed.reps - lastReps;
           if (repDiff > 0) msg += `\n📈 +${repDiff} rep${repDiff > 1 ? "s" : ""} a mais que o último treino!`;
@@ -504,7 +655,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── save_multiple ──
     if (parsed.action === "save_multiple") {
       const normalized = parsed.workouts.map((w) => ({ ...w, exercise: normalizeExercise(w.exercise) }));
       await saveMultipleWorkouts(phone, normalized, daysAgo);
@@ -514,7 +664,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── get_history ──
     if (parsed.action === "get_history") {
       const workouts = await getWorkoutsByDate(phone, parsed.exercise || null, daysAgo);
       const label = daysAgo === 0 ? "hoje" : daysAgo === 1 ? "ontem" : `${daysAgo} dias atrás`;
@@ -527,7 +676,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── get_last_session ──
     if (parsed.action === "get_last_session") {
       const workouts = await getLastSessionByMuscleGroup(phone, parsed.muscle_group);
       if (!workouts.length) {
@@ -540,7 +688,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── get_last ──
     if (parsed.action === "get_last") {
       const last = await getLastWorkoutAny(phone, parsed.exercise);
       if (!last) {
@@ -555,7 +702,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── get_pr ──
     if (parsed.action === "get_pr") {
       if (!parsed.exercise) {
         await sendWhatsApp(phone, `Qual exercício você quer saber o PR? Ex: "meu PR de supino" 😊`);
@@ -574,7 +720,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── get_pr_all ──
     if (parsed.action === "get_pr_all") {
       const best = await getBestExercise(phone);
       if (!best.length) {
@@ -586,7 +731,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── get_gym_history ──
     if (parsed.action === "get_gym_history") {
       const workouts = await getWorkoutsByGym(phone, parsed.gym, parsed.exercise || null);
       if (!workouts.length) {
@@ -598,7 +742,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── get_gym_pr ──
     if (parsed.action === "get_gym_pr") {
       if (!parsed.exercise || !parsed.gym) {
         await sendWhatsApp(phone, `Me diz o exercício e a academia. Ex: "meu PR de supino na SmartFit" 😊`);
@@ -614,13 +757,11 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── get_weekly_summary ──
     if (parsed.action === "get_weekly_summary") {
       const workouts = await getWeeklySummary(phone);
       if (!workouts.length) {
         await sendWhatsApp(phone, `Nenhum treino registrado essa semana, ${user.name}. Bora começar! 💪`);
       } else {
-        // Agrupa por data
         const byDay = {};
         for (const w of workouts) {
           const dateKey = new Date(w.created_at).toISOString().split("T")[0];
@@ -644,7 +785,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── delete_last ──
     if (parsed.action === "delete_last") {
       const deleted = await deleteLastWorkout(phone, parsed.exercise || null);
       if (!deleted) {
@@ -655,7 +795,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── delete_by_position ──
     if (parsed.action === "delete_by_position") {
       const workouts = await getWorkoutsByDate(phone, null, 0);
       const position = parsed.position || 1;
@@ -673,7 +812,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── update_last ──
     if (parsed.action === "update_last") {
       const updated = await updateLastWorkout(phone, parsed.exercise || null, parsed);
       if (!updated) {
@@ -685,7 +823,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── update_by_position ──
     if (parsed.action === "update_by_position") {
       const workouts = await getWorkoutsByDate(phone, null, 0);
       const position = parsed.position || 1;
@@ -703,7 +840,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── suggest_workout ──
     if (parsed.action === "suggest_workout") {
       const history = await getWeeklySummary(phone);
       const suggestion = await askClaudeSuggest(parsed.muscle_group, history, user.name);
@@ -711,7 +847,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── log_water ──
     if (parsed.action === "log_water") {
       const amountMl = Number(parsed.amount_ml || 0);
       if (!amountMl) {
@@ -734,7 +869,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── get_water ──
     if (parsed.action === "get_water") {
       const totalMl = await getTotalHydrationToday(phone);
       const goalMl = user.water_goal_ml || 2000;
@@ -747,7 +881,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── set_water_goal ──
     if (parsed.action === "set_water_goal") {
       await setWaterGoal(phone, parsed.goal_ml);
       await sendWhatsApp(phone, `✅ Meta de água definida: *${parsed.goal_ml}ml* por dia, ${user.name}! 💧`);
@@ -755,9 +888,14 @@ module.exports = async function handler(req, res) {
     }
 
     await sendWhatsApp(phone, plainReply || `Não consegui processar isso. Tenta de outro jeito 😊`);
-
   } catch (err) {
     console.error("Erro completo:", err.response?.data || err.message || err);
+
+    if (phone) {
+      try {
+        await sendWhatsApp(phone, `Tive um probleminha para processar sua mensagem agora. Tenta novamente em instantes 🙏`);
+      } catch {}
+    }
   }
 
   return res.status(200).json({ ok: true });
