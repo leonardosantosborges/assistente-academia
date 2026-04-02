@@ -790,13 +790,30 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const messageId = req.body.messageId || req.body.data?.messageId;
+  const messageId =
+    req.body.messageId ||
+    req.body.baileysId ||
+    req.body.data?.messageId ||
+    req.body.data?.baileysId ||
+    (req.body.audio?.url ? req.body.audio.url.split("/").pop() : null);
+
   const phone = req.body.phone;
+
+  console.log(
+    `[DEBUG] Recebido Webhook - ID: ${messageId} - Telefone: ${phone}`,
+  );
+  if (!messageId) {
+    console.warn(
+      "⚠️ Atenção: messageId veio vazio! A trava do Supabase não vai funcionar.",
+    );
+  }
 
   if (await isDuplicateWebhook(messageId)) {
     console.log(`⚠️ Webhook duplicado ignorado: ${messageId}`);
     return res.status(200).json({ ok: true, info: "Already processed" });
   }
+
+  console.log("Iniciando Whisper com Key Prefix:", process.env.OPENAI_API_KEY?.substring(0, 10));
 
   const incoming = await getMessageFromWebhook(req.body);
   const message = incoming.message?.trim();
