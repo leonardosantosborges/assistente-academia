@@ -183,7 +183,7 @@ async function transcribeAudio(filePath) {
       {
         headers: {
           ...form.getHeaders(),
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY_V2}`,
         },
         // Removemos o Infinity para evitar que a função fique presa
         maxContentLength: 25 * 1024 * 1024, // Limite de 25MB do Whisper
@@ -813,7 +813,7 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ ok: true, info: "Already processed" });
   }
 
-  console.log("Iniciando Whisper com Key Prefix:", process.env.OPENAI_API_KEY?.substring(0, 10));
+  console.log("Iniciando Whisper com Key Prefix:", process.env.OPENAI_API_KEY_V2?.substring(0, 10));
 
   const incoming = await getMessageFromWebhook(req.body);
   const message = incoming.message?.trim();
