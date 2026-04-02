@@ -32,9 +32,26 @@ const {
   getSuggestions,
 } = require("../utils/exercises");
 
+const processingAudios = new Map();
+
+function isDuplicateAudio(key, windowMs = 30000) {
+  const now = Date.now();
+  const last = processingAudios.get(key);
+
+  if (last && now - last < windowMs) {
+    return true;
+  }
+
+  processingAudios.set(key, now);
+  return false;
+}
+
 function extractJsonObject(text) {
   if (!text || typeof text !== "string") return null;
-  const cleaned = text.replace(/```json/gi, "").replace(/```/g, "").trim();
+  const cleaned = text
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
   if (start === -1 || end === -1 || end < start) return null;
@@ -77,12 +94,16 @@ function getAudioUrl(reqBody) {
 }
 
 function isAudioMessage(reqBody) {
-  const type = String(reqBody?.type || reqBody?.messageType || "").toLowerCase();
+  const type = String(
+    reqBody?.type || reqBody?.messageType || "",
+  ).toLowerCase();
   return type.includes("audio") || !!getAudioUrl(reqBody);
 }
 
 function inferAudioExtension(url) {
-  const cleanUrl = String(url || "").split("?")[0].toLowerCase();
+  const cleanUrl = String(url || "")
+    .split("?")[0]
+    .toLowerCase();
   if (cleanUrl.endsWith(".mp3")) return "mp3";
   if (cleanUrl.endsWith(".wav")) return "wav";
   if (cleanUrl.endsWith(".mpeg")) return "mpeg";
@@ -176,7 +197,10 @@ async function transcribeAudio(filePath) {
     if (err.response) {
       console.error("Status:", err.response.status);
       console.error("StatusText:", err.response.statusText);
-      console.error("OpenAI Error:", JSON.stringify(err.response.data, null, 2));
+      console.error(
+        "OpenAI Error:",
+        JSON.stringify(err.response.data, null, 2),
+      );
       console.error("Request ID:", err.response.headers?.["x-request-id"]);
     } else if (err.request) {
       console.error("Sem resposta da API");
@@ -453,7 +477,9 @@ async function updateLastWorkout(phone, exercise, newData) {
     sets: newData.sets ?? current.sets,
     reps: newData.reps ?? current.reps,
     weight_kg:
-      newData.weight_kg !== undefined ? (newData.weight_kg || null) : current.weight_kg,
+      newData.weight_kg !== undefined
+        ? newData.weight_kg || null
+        : current.weight_kg,
   };
 
   if (newData.new_exercise) {
@@ -479,7 +505,9 @@ async function updateWorkoutById(id, newData) {
     sets: newData.sets ?? current.sets,
     reps: newData.reps ?? current.reps,
     weight_kg:
-      newData.weight_kg !== undefined ? (newData.weight_kg || null) : current.weight_kg,
+      newData.weight_kg !== undefined
+        ? newData.weight_kg || null
+        : current.weight_kg,
   };
 
   if (newData.new_exercise) {
@@ -682,13 +710,19 @@ Definir meta de água:
   );
 
   const text = response.data.content[0].text;
-  return text.replace(/```json\n?/gi, "").replace(/```\n?/gi, "").trim();
+  return text
+    .replace(/```json\n?/gi, "")
+    .replace(/```\n?/gi, "")
+    .trim();
 }
 
 async function askClaudeSuggest(muscleGroup, history, userName) {
   const historyText = history.length
     ? `Histórico recente: ${history
-        .map((w) => `${w.exercise} ${w.sets}x${w.reps}${w.weight_kg ? ` - ${w.weight_kg}kg` : ""}`)
+        .map(
+          (w) =>
+            `${w.exercise} ${w.sets}x${w.reps}${w.weight_kg ? ` - ${w.weight_kg}kg` : ""}`,
+        )
         .join(", ")}`
     : "Sem histórico ainda.";
 
@@ -739,7 +773,8 @@ function formatWorkout(w, index) {
 }
 
 function formatWaterBar(totalMl, goalMl) {
-  const pct = goalMl > 0 ? Math.min(Math.round((totalMl / goalMl) * 100), 100) : 0;
+  const pct =
+    goalMl > 0 ? Math.min(Math.round((totalMl / goalMl) * 100), 100) : 0;
   const filled = Math.round(pct / 10);
   return `${"🟦".repeat(filled)}${"⬜".repeat(10 - filled)} ${pct}%`;
 }
@@ -751,6 +786,25 @@ module.exports = async function handler(req, res) {
   }
 
   const { phone } = req.body;
+
+  const audioUrl =
+    req.body?.audio?.audioUrl ||
+    req.body?.audio?.url ||
+    req.body?.message?.audio?.url ||
+    req.body?.message?.audioUrl ||
+    req.body?.voice?.url ||
+    req.body?.file?.url ||
+    null;
+
+  if (audioUrl) {
+    const dedupeKey = `${phone}:${audioUrl}`;
+
+    if (isDuplicateAudio(dedupeKey)) {
+      console.log("⚠️ Webhook duplicado ignorado:", dedupeKey);
+      return res.status(200).json({ ok: true, duplicate: true });
+    }
+  }
+  
   const incoming = await getMessageFromWebhook(req.body);
   const message = incoming.message?.trim();
 
@@ -807,7 +861,8 @@ module.exports = async function handler(req, res) {
     if (!parsed) {
       await sendWhatsApp(
         phone,
-        plainReply || "Não entendi. Quer registrar treino, ver histórico ou hidratação? 💪",
+        plainReply ||
+          "Não entendi. Quer registrar treino, ver histórico ou hidratação? 💪",
       );
       return res.status(200).json({ ok: true });
     }
@@ -827,7 +882,10 @@ module.exports = async function handler(req, res) {
     if (parsed.action === "change_name") {
       const newName = String(parsed.name || "").trim();
       if (!newName) {
-        await sendWhatsApp(phone, `Não entendi o nome. Me fala assim: "quero ser chamado de João"`);
+        await sendWhatsApp(
+          phone,
+          `Não entendi o nome. Me fala assim: "quero ser chamado de João"`,
+        );
         return res.status(200).json({ ok: true });
       }
 
@@ -836,7 +894,10 @@ module.exports = async function handler(req, res) {
         .update({ name: newName, awaiting_name: false })
         .eq("phone", phone);
 
-      await sendWhatsApp(phone, `Perfeito! A partir de agora vou te chamar de *${newName}* 💪`);
+      await sendWhatsApp(
+        phone,
+        `Perfeito! A partir de agora vou te chamar de *${newName}* 💪`,
+      );
       return res.status(200).json({ ok: true });
     }
 
@@ -844,9 +905,18 @@ module.exports = async function handler(req, res) {
       const normalizedExercise = normalizeExercise(parsed.exercise);
       const history = await getWorkoutHistory(phone, normalizedExercise);
 
-      await saveWorkout(phone, { ...parsed, exercise: normalizedExercise }, daysAgo);
+      await saveWorkout(
+        phone,
+        { ...parsed, exercise: normalizedExercise },
+        daysAgo,
+      );
 
-      const dayLabel = daysAgo === 0 ? "hoje" : daysAgo === 1 ? "ontem" : `${daysAgo} dias atrás`;
+      const dayLabel =
+        daysAgo === 0
+          ? "hoje"
+          : daysAgo === 1
+            ? "ontem"
+            : `${daysAgo} dias atrás`;
       const muscleGroup = getMuscleGroup(normalizedExercise);
 
       let msg = `✅ *${normalizedExercise}* - ${parsed.sets}x${parsed.reps}${parsed.weight_kg ? ` - ${parsed.weight_kg}kg` : ""} salvo (${dayLabel}), ${user.name}!`;
@@ -858,38 +928,48 @@ module.exports = async function handler(req, res) {
         const lastWeight = lastEntry.weight_kg ?? null;
         const lastReps = lastEntry.reps ?? null;
         const lastSets = lastEntry.sets ?? null;
-        const maxWeight = withWeight.length ? Math.max(...withWeight.map((w) => w.weight_kg)) : null;
+        const maxWeight = withWeight.length
+          ? Math.max(...withWeight.map((w) => w.weight_kg))
+          : null;
         const last3 = withWeight.slice(0, 3);
 
         if (parsed.weight_kg) {
           if (maxWeight !== null && parsed.weight_kg > maxWeight) {
             msg += `\n\n🏆 PR BATIDO! Recorde anterior: ${maxWeight}kg. Novo recorde: ${parsed.weight_kg}kg!`;
           } else if (last3.length >= 3) {
-            const avg = last3.reduce((s, w) => s + w.weight_kg, 0) / last3.length;
+            const avg =
+              last3.reduce((s, w) => s + w.weight_kg, 0) / last3.length;
             if (parsed.weight_kg > avg) {
               msg += `\n\n🔥 Acima da média dos últimos 3 treinos (${avg.toFixed(1)}kg). Continue assim!`;
             }
           } else if (lastWeight !== null) {
             const diff = parsed.weight_kg - lastWeight;
-            if (diff > 0) msg += `\n\n📈 Subiu ${diff}kg desde o último treino!`;
-            else if (diff < 0) msg += `\n\n📉 Desceu ${Math.abs(diff)}kg desde o último treino.`;
+            if (diff > 0)
+              msg += `\n\n📈 Subiu ${diff}kg desde o último treino!`;
+            else if (diff < 0)
+              msg += `\n\n📉 Desceu ${Math.abs(diff)}kg desde o último treino.`;
             else msg += `\n\n➡️ Mesma carga do último treino.`;
           }
         }
 
         if (lastReps !== null && parsed.reps !== lastReps) {
           const repDiff = parsed.reps - lastReps;
-          if (repDiff > 0) msg += `\n📈 +${repDiff} rep${repDiff > 1 ? "s" : ""} a mais que o último treino!`;
-          else msg += `\n📉 ${Math.abs(repDiff)} rep${Math.abs(repDiff) > 1 ? "s" : ""} a menos que o último treino.`;
+          if (repDiff > 0)
+            msg += `\n📈 +${repDiff} rep${repDiff > 1 ? "s" : ""} a mais que o último treino!`;
+          else
+            msg += `\n📉 ${Math.abs(repDiff)} rep${Math.abs(repDiff) > 1 ? "s" : ""} a menos que o último treino.`;
         }
 
         if (lastSets !== null && parsed.sets !== lastSets) {
           const setDiff = parsed.sets - lastSets;
-          if (setDiff > 0) msg += `\n📈 +${setDiff} série${setDiff > 1 ? "s" : ""} a mais!`;
-          else msg += `\n📉 ${Math.abs(setDiff)} série${Math.abs(setDiff) > 1 ? "s" : ""} a menos.`;
+          if (setDiff > 0)
+            msg += `\n📈 +${setDiff} série${setDiff > 1 ? "s" : ""} a mais!`;
+          else
+            msg += `\n📉 ${Math.abs(setDiff)} série${Math.abs(setDiff) > 1 ? "s" : ""} a menos.`;
         }
 
-        if (history.length >= 3) msg += `\n💪 ${history.length} registros no histórico.`;
+        if (history.length >= 3)
+          msg += `\n💪 ${history.length} registros no histórico.`;
       } else {
         msg += `\n\n🆕 Primeiro registro! Referência criada.`;
       }
@@ -906,32 +986,61 @@ module.exports = async function handler(req, res) {
 
       await saveMultipleWorkouts(phone, normalized, daysAgo);
 
-      const dayLabel = daysAgo === 0 ? "hoje" : daysAgo === 1 ? "ontem" : `${daysAgo} dias atrás`;
+      const dayLabel =
+        daysAgo === 0
+          ? "hoje"
+          : daysAgo === 1
+            ? "ontem"
+            : `${daysAgo} dias atrás`;
       const list = normalized.map((w, i) => formatWorkout(w, i)).join("\n");
 
-      await sendWhatsApp(phone, `Treino de ${dayLabel} salvo, ${user.name}! 💪\n\n${list}`);
+      await sendWhatsApp(
+        phone,
+        `Treino de ${dayLabel} salvo, ${user.name}! 💪\n\n${list}`,
+      );
       return res.status(200).json({ ok: true });
     }
 
     if (parsed.action === "get_history") {
-      const workouts = await getWorkoutsByDate(phone, parsed.exercise || null, daysAgo);
-      const label = daysAgo === 0 ? "hoje" : daysAgo === 1 ? "ontem" : `${daysAgo} dias atrás`;
+      const workouts = await getWorkoutsByDate(
+        phone,
+        parsed.exercise || null,
+        daysAgo,
+      );
+      const label =
+        daysAgo === 0
+          ? "hoje"
+          : daysAgo === 1
+            ? "ontem"
+            : `${daysAgo} dias atrás`;
 
       if (!workouts.length) {
-        await sendWhatsApp(phone, `Nenhum exercício registrado ${label}, ${user.name}. 💪`);
+        await sendWhatsApp(
+          phone,
+          `Nenhum exercício registrado ${label}, ${user.name}. 💪`,
+        );
       } else {
         const list = workouts.map((w, i) => formatWorkout(w, i)).join("\n");
-        await sendWhatsApp(phone, `🏋️ Treino de ${label}, ${user.name}:\n\n${list}`);
+        await sendWhatsApp(
+          phone,
+          `🏋️ Treino de ${label}, ${user.name}:\n\n${list}`,
+        );
       }
 
       return res.status(200).json({ ok: true });
     }
 
     if (parsed.action === "get_last_session") {
-      const workouts = await getLastSessionByMuscleGroup(phone, parsed.muscle_group);
+      const workouts = await getLastSessionByMuscleGroup(
+        phone,
+        parsed.muscle_group,
+      );
 
       if (!workouts.length) {
-        await sendWhatsApp(phone, `Nenhum treino de *${parsed.muscle_group}* encontrado, ${user.name}.`);
+        await sendWhatsApp(
+          phone,
+          `Nenhum treino de *${parsed.muscle_group}* encontrado, ${user.name}.`,
+        );
       } else {
         const dateLabel = formatDateLabel(workouts[0].created_at);
         const list = workouts.map((w, i) => formatWorkout(w, i)).join("\n");
@@ -950,7 +1059,8 @@ module.exports = async function handler(req, res) {
       if (!last) {
         const suggestions = getSuggestions(parsed.exercise);
         let msg = `Nenhum registro de *${normalizeExercise(parsed.exercise)}* encontrado, ${user.name}.`;
-        if (suggestions) msg += `\n\nVocê quis dizer?\n${suggestions.map((s) => `- ${s}`).join("\n")}`;
+        if (suggestions)
+          msg += `\n\nVocê quis dizer?\n${suggestions.map((s) => `- ${s}`).join("\n")}`;
         await sendWhatsApp(phone, msg);
       } else {
         const dateLabel = formatDateLabel(last.created_at);
@@ -965,7 +1075,10 @@ module.exports = async function handler(req, res) {
 
     if (parsed.action === "get_pr") {
       if (!parsed.exercise) {
-        await sendWhatsApp(phone, `Qual exercício você quer saber o PR? Ex: "meu PR de supino" 😊`);
+        await sendWhatsApp(
+          phone,
+          `Qual exercício você quer saber o PR? Ex: "meu PR de supino" 😊`,
+        );
         return res.status(200).json({ ok: true });
       }
 
@@ -974,7 +1087,8 @@ module.exports = async function handler(req, res) {
       if (!pr) {
         const suggestions = getSuggestions(parsed.exercise);
         let msg = `Nenhum registro de *${normalizeExercise(parsed.exercise)}* encontrado, ${user.name}.`;
-        if (suggestions) msg += `\n\nVocê quis dizer?\n${suggestions.map((s) => `- ${s}`).join("\n")}`;
+        if (suggestions)
+          msg += `\n\nVocê quis dizer?\n${suggestions.map((s) => `- ${s}`).join("\n")}`;
         await sendWhatsApp(phone, msg);
       } else {
         const dateLabel = formatDateLabel(pr.created_at);
@@ -991,23 +1105,44 @@ module.exports = async function handler(req, res) {
       const best = await getBestExercise(phone);
 
       if (!best.length) {
-        await sendWhatsApp(phone, `Nenhum exercício com peso registrado ainda, ${user.name}. 💪`);
+        await sendWhatsApp(
+          phone,
+          `Nenhum exercício com peso registrado ainda, ${user.name}. 💪`,
+        );
       } else {
-        const list = best.map((w, i) => `${i + 1}. *${w.exercise}* - ${w.weight_kg}kg`).join("\n");
-        await sendWhatsApp(phone, `🏆 Suas maiores cargas, ${user.name}:\n\n${list}`);
+        const list = best
+          .map((w, i) => `${i + 1}. *${w.exercise}* - ${w.weight_kg}kg`)
+          .join("\n");
+        await sendWhatsApp(
+          phone,
+          `🏆 Suas maiores cargas, ${user.name}:\n\n${list}`,
+        );
       }
 
       return res.status(200).json({ ok: true });
     }
 
     if (parsed.action === "get_gym_history") {
-      const workouts = await getWorkoutsByGym(phone, parsed.gym, parsed.exercise || null);
+      const workouts = await getWorkoutsByGym(
+        phone,
+        parsed.gym,
+        parsed.exercise || null,
+      );
 
       if (!workouts.length) {
-        await sendWhatsApp(phone, `Nenhum treino registrado na ${parsed.gym}, ${user.name}. 💪`);
+        await sendWhatsApp(
+          phone,
+          `Nenhum treino registrado na ${parsed.gym}, ${user.name}. 💪`,
+        );
       } else {
-        const list = workouts.slice(0, 10).map((w, i) => formatWorkout(w, i)).join("\n");
-        await sendWhatsApp(phone, `🏋️ Treinos na ${parsed.gym}, ${user.name}:\n\n${list}`);
+        const list = workouts
+          .slice(0, 10)
+          .map((w, i) => formatWorkout(w, i))
+          .join("\n");
+        await sendWhatsApp(
+          phone,
+          `🏋️ Treinos na ${parsed.gym}, ${user.name}:\n\n${list}`,
+        );
       }
 
       return res.status(200).json({ ok: true });
@@ -1015,7 +1150,10 @@ module.exports = async function handler(req, res) {
 
     if (parsed.action === "get_gym_pr") {
       if (!parsed.exercise || !parsed.gym) {
-        await sendWhatsApp(phone, `Me diz o exercício e a academia. Ex: "meu PR de supino na SmartFit" 😊`);
+        await sendWhatsApp(
+          phone,
+          `Me diz o exercício e a academia. Ex: "meu PR de supino na SmartFit" 😊`,
+        );
         return res.status(200).json({ ok: true });
       }
 
@@ -1041,7 +1179,10 @@ module.exports = async function handler(req, res) {
       const workouts = await getWeeklySummary(phone);
 
       if (!workouts.length) {
-        await sendWhatsApp(phone, `Nenhum treino registrado essa semana, ${user.name}. Bora começar! 💪`);
+        await sendWhatsApp(
+          phone,
+          `Nenhum treino registrado essa semana, ${user.name}. Bora começar! 💪`,
+        );
       } else {
         const byDay = {};
 
@@ -1057,7 +1198,10 @@ module.exports = async function handler(req, res) {
           const formatted = dateObj.toLocaleDateString("pt-BR");
           const header = `*${dayName} - ${formatted}*`;
           const list = dayWorkouts
-            .map((w) => `- *${w.exercise}* - ${w.sets}x${w.reps}${w.weight_kg ? ` - ${w.weight_kg}kg` : ""}`)
+            .map(
+              (w) =>
+                `- *${w.exercise}* - ${w.sets}x${w.reps}${w.weight_kg ? ` - ${w.weight_kg}kg` : ""}`,
+            )
             .join("\n");
           return `${header}\n${list}`;
         });
@@ -1074,9 +1218,15 @@ module.exports = async function handler(req, res) {
       const deleted = await deleteLastWorkout(phone, parsed.exercise || null);
 
       if (!deleted) {
-        await sendWhatsApp(phone, `Nenhum exercício encontrado para deletar, ${user.name}.`);
+        await sendWhatsApp(
+          phone,
+          `Nenhum exercício encontrado para deletar, ${user.name}.`,
+        );
       } else {
-        await sendWhatsApp(phone, `🗑️ *${deleted.exercise}* deletado com sucesso, ${user.name}!`);
+        await sendWhatsApp(
+          phone,
+          `🗑️ *${deleted.exercise}* deletado com sucesso, ${user.name}!`,
+        );
       }
 
       return res.status(200).json({ ok: true });
@@ -1088,25 +1238,42 @@ module.exports = async function handler(req, res) {
       const index = position - 1;
 
       if (!workouts.length) {
-        await sendWhatsApp(phone, `Nenhum exercício registrado hoje, ${user.name}.`);
+        await sendWhatsApp(
+          phone,
+          `Nenhum exercício registrado hoje, ${user.name}.`,
+        );
       } else if (index < 0 || index >= workouts.length) {
-        await sendWhatsApp(phone, `Posição ${position} inválida. Você tem ${workouts.length} exercício(s) hoje.`);
+        await sendWhatsApp(
+          phone,
+          `Posição ${position} inválida. Você tem ${workouts.length} exercício(s) hoje.`,
+        );
       } else {
         const target = workouts[index];
         await deleteWorkoutById(target.id);
-        await sendWhatsApp(phone, `🗑️ *${target.exercise}* (posição ${position}) deletado, ${user.name}!`);
+        await sendWhatsApp(
+          phone,
+          `🗑️ *${target.exercise}* (posição ${position}) deletado, ${user.name}!`,
+        );
       }
 
       return res.status(200).json({ ok: true });
     }
 
     if (parsed.action === "update_last") {
-      const updated = await updateLastWorkout(phone, parsed.exercise || null, parsed);
+      const updated = await updateLastWorkout(
+        phone,
+        parsed.exercise || null,
+        parsed,
+      );
 
       if (!updated) {
-        await sendWhatsApp(phone, `Nenhum exercício encontrado para alterar, ${user.name}.`);
+        await sendWhatsApp(
+          phone,
+          `Nenhum exercício encontrado para alterar, ${user.name}.`,
+        );
       } else {
-        const exerciseName = updated.exercise || normalizeExercise(parsed.exercise);
+        const exerciseName =
+          updated.exercise || normalizeExercise(parsed.exercise);
         await sendWhatsApp(
           phone,
           `✏️ Registro atualizado, ${user.name}!\n*${exerciseName}* - ${updated.sets}x${updated.reps}${updated.weight_kg ? ` - ${updated.weight_kg}kg` : ""}`,
@@ -1122,9 +1289,15 @@ module.exports = async function handler(req, res) {
       const index = position - 1;
 
       if (!workouts.length) {
-        await sendWhatsApp(phone, `Nenhum exercício registrado hoje, ${user.name}.`);
+        await sendWhatsApp(
+          phone,
+          `Nenhum exercício registrado hoje, ${user.name}.`,
+        );
       } else if (index < 0 || index >= workouts.length) {
-        await sendWhatsApp(phone, `Posição ${position} inválida. Você tem ${workouts.length} exercício(s) hoje.`);
+        await sendWhatsApp(
+          phone,
+          `Posição ${position} inválida. Você tem ${workouts.length} exercício(s) hoje.`,
+        );
       } else {
         const target = workouts[index];
         const updated = await updateWorkoutById(target.id, parsed);
@@ -1139,8 +1312,15 @@ module.exports = async function handler(req, res) {
 
     if (parsed.action === "suggest_workout") {
       const history = await getWeeklySummary(phone);
-      const suggestion = await askClaudeSuggest(parsed.muscle_group, history, user.name);
-      await sendWhatsApp(phone, `🤖 Treino de ${parsed.muscle_group} para ${user.name}:\n\n${suggestion}`);
+      const suggestion = await askClaudeSuggest(
+        parsed.muscle_group,
+        history,
+        user.name,
+      );
+      await sendWhatsApp(
+        phone,
+        `🤖 Treino de ${parsed.muscle_group} para ${user.name}:\n\n${suggestion}`,
+      );
       return res.status(200).json({ ok: true });
     }
 
@@ -1193,11 +1373,17 @@ module.exports = async function handler(req, res) {
 
     if (parsed.action === "set_water_goal") {
       await setWaterGoal(phone, parsed.goal_ml);
-      await sendWhatsApp(phone, `✅ Meta de água definida: *${parsed.goal_ml}ml* por dia, ${user.name}! 💧`);
+      await sendWhatsApp(
+        phone,
+        `✅ Meta de água definida: *${parsed.goal_ml}ml* por dia, ${user.name}! 💧`,
+      );
       return res.status(200).json({ ok: true });
     }
 
-    await sendWhatsApp(phone, plainReply || `Não consegui processar isso. Tenta de outro jeito 😊`);
+    await sendWhatsApp(
+      phone,
+      plainReply || `Não consegui processar isso. Tenta de outro jeito 😊`,
+    );
   } catch (err) {
     console.error("Erro completo:", err.response?.data || err.message || err);
 
