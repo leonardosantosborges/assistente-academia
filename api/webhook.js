@@ -32,18 +32,18 @@ const {
   getSuggestions,
 } = require("../utils/exercises");
 
-const processingAudios = new Map();
+async function isDuplicateWebhook(messageId) {
+  if (!messageId) return false;
 
-function isDuplicateAudio(key, windowMs = 30000) {
-  const now = Date.now();
-  const last = processingAudios.get(key);
+  // Tenta inserir o ID. Se o Supabase der erro de 'Unique Violation', o webhook é repetido.
+  const { error } = await supabase
+    .from("webhook_logs")
+    .insert([{ id: messageId }]);
 
-  if (last && now - last < windowMs) {
-    return true;
+  if (error && error.code === "23505") {
+    return true; // É duplicado
   }
-
-  processingAudios.set(key, now);
-  return false;
+  return false; // É novo, inseriu com sucesso
 }
 
 function extractJsonObject(text) {
@@ -170,7 +170,10 @@ async function transcribeAudio(filePath) {
     const preparedFilePath = await prepareAudioForTranscription(filePath);
 
     const form = new FormData();
-    form.append("file", fs.createReadStream(preparedFilePath));
+    // Adicionar o filename ajuda a API da OpenAI a entender o formato
+    form.append("file", fs.createReadStream(preparedFilePath), {
+      filename: path.basename(preparedFilePath),
+    });
     form.append("model", "whisper-1");
     form.append("language", "pt");
 
@@ -179,11 +182,12 @@ async function transcribeAudio(filePath) {
       form,
       {
         headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
           ...form.getHeaders(),
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         },
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
+        // Removemos o Infinity para evitar que a função fique presa
+        maxContentLength: 25 * 1024 * 1024, // Limite de 25MB do Whisper
+        maxBodyLength: 25 * 1024 * 1024,
       },
     );
 
@@ -193,6 +197,7 @@ async function transcribeAudio(filePath) {
     };
   } catch (err) {
     console.error("❌ ERRO NA TRANSCRIÇÃO:");
+    console.error("❌ ERRO OPENAI:", err.response?.status);
 
     if (err.response) {
       console.error("Status:", err.response.status);
@@ -785,26 +790,14 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { phone } = req.body;
+  const messageId = req.body.messageId || req.body.data?.messageId;
+  const phone = req.body.phone;
 
-  const audioUrl =
-    req.body?.audio?.audioUrl ||
-    req.body?.audio?.url ||
-    req.body?.message?.audio?.url ||
-    req.body?.message?.audioUrl ||
-    req.body?.voice?.url ||
-    req.body?.file?.url ||
-    null;
-
-  if (audioUrl) {
-    const dedupeKey = `${phone}:${audioUrl}`;
-
-    if (isDuplicateAudio(dedupeKey)) {
-      console.log("⚠️ Webhook duplicado ignorado:", dedupeKey);
-      return res.status(200).json({ ok: true, duplicate: true });
-    }
+  if (await isDuplicateWebhook(messageId)) {
+    console.log(`⚠️ Webhook duplicado ignorado: ${messageId}`);
+    return res.status(200).json({ ok: true, info: "Already processed" });
   }
-  
+
   const incoming = await getMessageFromWebhook(req.body);
   const message = incoming.message?.trim();
 
