@@ -35,15 +35,25 @@ const {
 async function isDuplicateWebhook(messageId) {
   if (!messageId) return false;
 
-  // Tenta inserir o ID. Se o Supabase der erro de 'Unique Violation', o webhook é repetido.
-  const { error } = await supabase
-    .from("webhook_logs")
-    .insert([{ id: messageId }]);
+  console.log("[SUPABASE] Tentando inserir ID:", messageId);
 
-  if (error && error.code === "23505") {
-    return true; // É duplicado
+  const { data, error } = await supabase
+    .from("webhook_logs")
+    .insert([{ id: String(messageId) }]);
+
+  if (error) {
+    // Se for erro de duplicata, retornamos true
+    if (error.code === "23505") {
+      console.log("[SUPABASE] Duplicata detectada.");
+      return true;
+    }
+    // Se for outro erro (ex: permissão ou tabela errada), logamos o motivo real
+    console.error("[SUPABASE] Erro inesperado:", JSON.stringify(error));
+    return false;
   }
-  return false; // É novo, inseriu com sucesso
+
+  console.log("[SUPABASE] ID inserido com sucesso.");
+  return false;
 }
 
 function extractJsonObject(text) {
@@ -813,7 +823,10 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ ok: true, info: "Already processed" });
   }
 
-  console.log("Iniciando Whisper com Key Prefix:", process.env.OPENAI_API_KEY_V2?.substring(0, 10));
+  console.log(
+    "Iniciando Whisper com Key Prefix:",
+    process.env.OPENAI_API_KEY_V2?.substring(0, 10),
+  );
 
   const incoming = await getMessageFromWebhook(req.body);
   const message = incoming.message?.trim();
