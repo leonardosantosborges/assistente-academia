@@ -124,29 +124,42 @@ async function downloadAudioFile(url) {
 }
 
 async function transcribeAudio(filePath) {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY não configurada para transcrição");
-  }
+  try {
+    const form = new FormData();
+    form.append("file", fs.createReadStream(filePath));
+    form.append("model", "whisper-1");
 
-  const form = new FormData();
-  form.append("file", fs.createReadStream(filePath));
-  form.append("model", "whisper-1");
-  form.append("language", "pt");
-
-  const response = await axios.post(
-    "https://api.openai.com/v1/audio/transcriptions",
-    form,
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        ...form.getHeaders(),
+    const response = await axios.post(
+      "https://api.openai.com/v1/audio/transcriptions",
+      form,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          ...form.getHeaders(),
+        },
       },
-      maxBodyLength: Infinity,
-      maxContentLength: Infinity,
-    },
-  );
+    );
 
-  return response.data?.text?.trim() || "";
+    return response.data.text;
+  } catch (err) {
+    console.error("❌ ERRO NA TRANSCRIÇÃO:");
+
+    if (err.response) {
+      console.error("Status:", err.response.status);
+      console.error("StatusText:", err.response.statusText);
+      console.error(
+        "OpenAI Error:",
+        JSON.stringify(err.response.data, null, 2),
+      );
+      console.error("Request ID:", err.response.headers?.["x-request-id"]);
+    } else if (err.request) {
+      console.error("Sem resposta da API:", err.request);
+    } else {
+      console.error("Erro interno:", err.message);
+    }
+
+    throw err; // mantém o erro subindo
+  }
 }
 
 async function getMessageFromWebhook(reqBody) {
