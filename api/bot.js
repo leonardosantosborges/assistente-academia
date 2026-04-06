@@ -15,6 +15,7 @@ const supabase = createClient(
 );
 
 const ZAPI_URL = `https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE_ID}/token/${process.env.ZAPI_TOKEN}/send-text`;
+const APP_TIMEZONE = process.env.APP_TIMEZONE || "America/Sao_Paulo";
 
 const DAY_NAMES = [
   "Domingo",
@@ -85,6 +86,51 @@ function formatDateLabel(dateStr) {
   const dayName = DAY_NAMES[date.getDay()];
   const formatted = date.toLocaleDateString("pt-BR");
   return `${dayName} - ${formatted}`;
+}
+
+function getTimezoneDateParts(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: APP_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  return { year, month, day };
+}
+
+function getDateStringInTimezone(date = new Date()) {
+  const { year, month, day } = getTimezoneDateParts(date);
+  return `${year}-${month}-${day}`;
+}
+
+function getDateRangeForDaysAgo(daysAgo = 0) {
+  const baseDate = new Date();
+  baseDate.setDate(baseDate.getDate() - daysAgo);
+
+  const start = getDateStringInTimezone(baseDate);
+  const endDate = new Date(baseDate);
+  endDate.setDate(endDate.getDate() + 1);
+  const end = getDateStringInTimezone(endDate);
+
+  return { start, end };
+}
+
+async function insertWorkouts(rows) {
+  const { error } = await supabase.from("workouts").insert(rows);
+
+  if (error) {
+    console.error(
+      "[SUPABASE] Erro ao salvar treino:",
+      JSON.stringify(error, null, 2),
+    );
+    throw error;
+  }
 }
 
 function getIncomingText(reqBody) {
@@ -360,7 +406,7 @@ async function saveWorkout(phone, data, daysAgo = 0) {
   date.setHours(12, 0, 0, 0);
   const normalizedExercise = normalizeExercise(data.exercise);
 
-  await supabase.from("workouts").insert({
+  const row = {
     user_phone: phone,
     exercise: normalizedExercise,
     sets: data.sets,
@@ -369,8 +415,10 @@ async function saveWorkout(phone, data, daysAgo = 0) {
     notes: data.notes || null,
     gym: data.gym || null,
     muscle_group: getMuscleGroup(normalizedExercise),
-    created_at: daysAgo > 0 ? date.toISOString() : undefined,
-  });
+    ...(daysAgo > 0 ? { created_at: date.toISOString() } : {}),
+  };
+
+  await insertWorkouts([row]);
 }
 
 async function saveMultipleWorkouts(phone, workouts, daysAgo = 0, gym = null) {
@@ -388,11 +436,11 @@ async function saveMultipleWorkouts(phone, workouts, daysAgo = 0, gym = null) {
       weight_kg: w.weight_kg || null,
       gym: w.gym || gym || null,
       muscle_group: getMuscleGroup(ne),
-      created_at: daysAgo > 0 ? date.toISOString() : undefined,
+      ...(daysAgo > 0 ? { created_at: date.toISOString() } : {}),
     };
   });
 
-  await supabase.from("workouts").insert(rows);
+  await insertWorkouts(rows);
 }
 
 async function getLastSessionByMuscleGroup(phone, muscleGroup) {
@@ -536,11 +584,7 @@ async function updateWorkoutById(id, newData) {
 }
 
 async function getWorkoutsByDate(phone, exercise, daysAgo) {
-  const date = new Date();
-  date.setDate(date.getDate() - daysAgo);
-
-  const start = date.toISOString().split("T")[0];
-  const end = new Date(date.getTime() + 86400000).toISOString().split("T")[0];
+  const { start, end } = getDateRangeForDaysAgo(daysAgo);
 
   let query = supabase
     .from("workouts")
@@ -574,7 +618,7 @@ async function getWeeklySummary(phone) {
 
 // ── Hidratação ────────────────────────────────────────────────
 async function getTodayHydration(phone) {
-  const today = new Date().toISOString().split("T")[0];
+  const today = getDateStringInTimezone();
 
   const { data } = await supabase
     .from("hydration")
@@ -587,7 +631,7 @@ async function getTodayHydration(phone) {
 }
 
 async function addHydration(phone, amountMl) {
-  const today = new Date().toISOString().split("T")[0];
+  const today = getDateStringInTimezone();
   await supabase
     .from("hydration")
     .insert({ user_phone: phone, amount_ml: amountMl, date: today });
@@ -1214,7 +1258,7 @@ module.exports = async function handler(req, res) {
         const byDay = {};
 
         for (const w of workouts) {
-          const dateKey = new Date(w.created_at).toISOString().split("T")[0];
+          const dateKey = getDateStringInTimezone(new Date(w.created_at));
           if (!byDay[dateKey]) byDay[dateKey] = [];
           byDay[dateKey].push(w);
         }
