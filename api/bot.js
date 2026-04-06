@@ -809,6 +809,10 @@ module.exports = async function handler(req, res) {
 
   const phone = req.body.phone;
 
+  if (req.body.fromMe === true) {
+    return res.status(200).json({ ok: true });
+  }
+
   console.log(
     `[DEBUG] Recebido Webhook - ID: ${messageId} - Telefone: ${phone}`,
   );
