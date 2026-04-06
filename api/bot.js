@@ -88,6 +88,12 @@ function formatDateLabel(dateStr) {
   return `${dayName} - ${formatted}`;
 }
 
+function formatRelativeDayLabel(daysAgo = 0) {
+  if (daysAgo === 0) return "hoje";
+  if (daysAgo === 1) return "ontem";
+  return `${daysAgo} dias atrás`;
+}
+
 function getTimezoneDateParts(date = new Date()) {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: APP_TIMEZONE,
@@ -723,6 +729,9 @@ Deletar último de exercício específico:
 Deletar por posição na lista do dia (ex: "apaga o exercício 11", "exclui o terceiro"):
 {"action":"delete_by_position","position":11}
 
+Deletar por posição em um dia específico (ex: "apaga o exercício 2 de ontem"):
+{"action":"delete_by_position","position":2,"days_ago":1}
+
 Alterar último registro — inclua APENAS os campos que o usuário mencionou explicitamente:
 {"action":"update_last","exercise":"supino","sets":2,"reps":9}
 Se o usuário disse apenas "troca para 7,5kg", envie somente: {"action":"update_last","weight_kg":7.5}
@@ -983,11 +992,7 @@ module.exports = async function handler(req, res) {
       );
 
       const dayLabel =
-        daysAgo === 0
-          ? "hoje"
-          : daysAgo === 1
-            ? "ontem"
-            : `${daysAgo} dias atrás`;
+        formatRelativeDayLabel(daysAgo);
       const muscleGroup = getMuscleGroup(normalizedExercise);
 
       let msg = `✅ *${normalizedExercise}* - ${parsed.sets}x${parsed.reps}${parsed.weight_kg ? ` - ${parsed.weight_kg}kg` : ""} salvo (${dayLabel}), ${user.name}!`;
@@ -1079,11 +1084,7 @@ module.exports = async function handler(req, res) {
         daysAgo,
       );
       const label =
-        daysAgo === 0
-          ? "hoje"
-          : daysAgo === 1
-            ? "ontem"
-            : `${daysAgo} dias atrás`;
+        formatRelativeDayLabel(daysAgo);
 
       if (!workouts.length) {
         await sendWhatsApp(
@@ -1304,26 +1305,28 @@ module.exports = async function handler(req, res) {
     }
 
     if (parsed.action === "delete_by_position") {
-      const workouts = await getWorkoutsByDate(phone, null, 0);
+      const targetDaysAgo = parsed.days_ago || 0;
+      const workouts = await getWorkoutsByDate(phone, null, targetDaysAgo);
       const position = parsed.position || 1;
       const index = position - 1;
+      const dayLabel = formatRelativeDayLabel(targetDaysAgo);
 
       if (!workouts.length) {
         await sendWhatsApp(
           phone,
-          `Nenhum exercício registrado hoje, ${user.name}.`,
+          `Nenhum exercício registrado ${dayLabel}, ${user.name}.`,
         );
       } else if (index < 0 || index >= workouts.length) {
         await sendWhatsApp(
           phone,
-          `Posição ${position} inválida. Você tem ${workouts.length} exercício(s) hoje.`,
+          `Posição ${position} inválida. Você tem ${workouts.length} exercício(s) ${dayLabel}.`,
         );
       } else {
         const target = workouts[index];
         await deleteWorkoutById(target.id);
         await sendWhatsApp(
           phone,
-          `🗑️ *${target.exercise}* (posição ${position}) deletado, ${user.name}!`,
+          `🗑️ *${target.exercise}* (posição ${position}) deletado de ${dayLabel}, ${user.name}!`,
         );
       }
 
