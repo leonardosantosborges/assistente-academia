@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FitLog | Seu treino organizado pelo WhatsApp</title>
+    <meta
+      name="description"
+      content="Registre treinos, acompanhe a semana, consulte PRs e evolução direto no WhatsApp com o FitLog."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,700&family=Teko:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #050505;
+        --bg-soft: #0c0f0c;
+        --panel: rgba(14, 19, 14, 0.78);
+        --panel-strong: rgba(12, 17, 12, 0.95);
+        --text: #f5f7f5;
+        --muted: #9ca79c;
+        --green: #8eff2b;
+        --green-strong: #58d411;
+        --green-deep: #163e12;
+        --line: rgba(142, 255, 43, 0.18);
+        --shadow: 0 24px 80px rgba(87, 212, 17, 0.16);
+        --radius-xl: 32px;
+        --radius-lg: 22px;
+        --radius-md: 16px;
+        --max: 1180px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Barlow", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at 20% 15%, rgba(88, 212, 17, 0.18), transparent 22%),
+          radial-gradient(circle at 80% 30%, rgba(142, 255, 43, 0.1), transparent 18%),
+          radial-gradient(circle at 50% 100%, rgba(88, 212, 17, 0.12), transparent 25%),
+          linear-gradient(180deg, #050505 0%, #090b09 44%, #050505 100%);
+        overflow-x: hidden;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+        background-size: 42px 42px;
+        mask-image: radial-gradient(circle at center, black 42%, transparent 88%);
+        pointer-events: none;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      img {
+        max-width: 100%;
+        display: block;
+      }
+
+      .shell {
+        position: relative;
+        width: min(100% - 32px, var(--max));
+        margin: 0 auto;
+      }
+
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        backdrop-filter: blur(18px);
+        background: rgba(5, 5, 5, 0.74);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      }
+
+      .nav-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 18px 0;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .brand-mark {
+        position: relative;
+        width: 50px;
+        height: 50px;
+        border-radius: 18px;
+        background:
+          radial-gradient(circle at 30% 28%, rgba(255, 255, 255, 0.4), transparent 30%),
+          linear-gradient(135deg, #2d8d18 0%, #93ff20 52%, #58d411 100%);
+        box-shadow: 0 14px 34px rgba(88, 212, 17, 0.35);
+        overflow: hidden;
+      }
+
+      .brand-mark::before,
+      .brand-mark::after {
+        content: "";
+        position: absolute;
+        left: 10px;
+        right: 8px;
+        height: 10px;
+        border-radius: 999px;
+        background: #051005;
+        transform: skewX(-24deg);
+      }
+
+      .brand-mark::before {
+        top: 13px;
+      }
+
+      .brand-mark::after {
+        top: 27px;
+        right: 13px;
+      }
+
+      .brand-text {
+        display: flex;
+        flex-direction: column;
+        line-height: 0.95;
+      }
+
+      .brand-title {
+        font-family: "Teko", sans-serif;
+        font-size: 2.3rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .brand-title .muted {
+        color: #ffffff;
+      }
+
+      .brand-title .accent {
+        color: var(--green);
+        text-shadow: 0 0 18px rgba(142, 255, 43, 0.4);
+      }
+
+      .brand-subtitle {
+        color: var(--muted);
+        font-size: 0.82rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        color: var(--muted);
+        font-size: 0.98rem;
+      }
+
+      .nav-links a:hover {
+        color: var(--text);
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: 52px;
+        padding: 0 24px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        font-weight: 700;
+        transition:
+          transform 180ms ease,
+          box-shadow 180ms ease,
+          border-color 180ms ease,
+          background 180ms ease;
+      }
+
+      .button:hover {
+        transform: translateY(-2px);
+      }
+
+      .button-primary {
+        color: #041003;
+        background: linear-gradient(135deg, #c6ff66 0%, #8eff2b 45%, #58d411 100%);
+        box-shadow: 0 18px 40px rgba(88, 212, 17, 0.3);
+      }
+
+      .button-secondary {
+        color: var(--text);
+        border-color: var(--line);
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .hero {
+        position: relative;
+        padding: 62px 0 38px;
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1.12fr 0.88fr;
+        gap: 34px;
+        align-items: center;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+        border-radius: 999px;
+        background: rgba(142, 255, 43, 0.08);
+        color: #d4ffc0;
+        font-size: 0.9rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        border: 1px solid rgba(142, 255, 43, 0.14);
+      }
+
+      .eyebrow::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--green);
+        box-shadow: 0 0 16px rgba(142, 255, 43, 0.8);
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+      }
+
+      .hero h1 {
+        margin-top: 18px;
+        font-family: "Teko", sans-serif;
+        font-size: clamp(3.7rem, 8vw, 7.4rem);
+        line-height: 0.92;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+
+      .hero h1 span {
+        color: var(--green);
+        text-shadow: 0 0 30px rgba(142, 255, 43, 0.16);
+      }
+
+      .hero-copy {
+        margin-top: 20px;
+        max-width: 630px;
+        color: #d6ddd6;
+        font-size: 1.16rem;
+        line-height: 1.65;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 28px;
+      }
+
+      .hero-stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 26px;
+      }
+
+      .stat {
+        padding: 18px 18px 16px;
+        border-radius: var(--radius-md);
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .stat strong {
+        display: block;
+        font-family: "Teko", sans-serif;
+        font-size: 2rem;
+        line-height: 0.95;
+        color: var(--green);
+      }
+
+      .stat span {
+        color: var(--muted);
+        font-size: 0.96rem;
+      }
+
+      .phone-stage {
+        position: relative;
+        min-height: 620px;
+      }
+
+      .glow-ring {
+        position: absolute;
+        inset: 12% 12% auto auto;
+        width: 340px;
+        height: 340px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(142, 255, 43, 0.18), transparent 68%);
+        filter: blur(12px);
+      }
+
+      .phone-card {
+        position: relative;
+        width: min(100%, 460px);
+        margin-left: auto;
+        border-radius: 38px;
+        padding: 18px;
+        background: linear-gradient(180deg, rgba(19, 24, 19, 0.95), rgba(5, 7, 5, 0.98));
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .phone-card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(180deg, rgba(142, 255, 43, 0.1), transparent 24%),
+          radial-gradient(circle at top right, rgba(142, 255, 43, 0.12), transparent 26%);
+        pointer-events: none;
+      }
+
+      .phone-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px 18px;
+      }
+
+      .phone-avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #2d8d18 0%, #93ff20 100%);
+        position: relative;
+      }
+
+      .phone-avatar::before,
+      .phone-avatar::after {
+        content: "";
+        position: absolute;
+        left: 8px;
+        right: 6px;
+        height: 8px;
+        border-radius: 999px;
+        background: #071107;
+        transform: skewX(-24deg);
+      }
+
+      .phone-avatar::before {
+        top: 11px;
+      }
+
+      .phone-avatar::after {
+        top: 24px;
+        right: 10px;
+      }
+
+      .phone-title {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .phone-title strong {
+        font-size: 1.05rem;
+      }
+
+      .phone-title span {
+        font-size: 0.88rem;
+        color: #8fe65e;
+      }
+
+      .chat {
+        position: relative;
+        border-radius: 28px;
+        padding: 18px;
+        background:
+          radial-gradient(circle at 20% 0%, rgba(142, 255, 43, 0.05), transparent 25%),
+          rgba(0, 0, 0, 0.42);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .bubble {
+        max-width: 88%;
+        padding: 14px 16px;
+        border-radius: 18px;
+        margin-bottom: 12px;
+        font-size: 0.98rem;
+        line-height: 1.5;
+        animation: rise 500ms ease both;
+      }
+
+      .bubble strong {
+        color: var(--green);
+      }
+
+      .bubble.user {
+        margin-left: auto;
+        background: linear-gradient(135deg, #1a4114, #285d18);
+        border-bottom-right-radius: 6px;
+      }
+
+      .bubble.bot {
+        background: rgba(255, 255, 255, 0.06);
+        border-bottom-left-radius: 6px;
+        color: #edf2ed;
+      }
+
+      .chat-input {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 14px;
+        padding: 14px 16px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--muted);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .chat-input button {
+        width: 42px;
+        height: 42px;
+        border: 0;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #b8ff49, #58d411);
+        color: #081007;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .section {
+        padding: 42px 0;
+      }
+
+      .section-heading {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 24px;
+      }
+
+      .section-heading h2 {
+        font-family: "Teko", sans-serif;
+        font-size: clamp(2.5rem, 5vw, 4.4rem);
+        line-height: 0.95;
+        text-transform: uppercase;
+      }
+
+      .section-heading p {
+        max-width: 470px;
+        color: var(--muted);
+        font-size: 1.02rem;
+        line-height: 1.65;
+      }
+
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .feature {
+        position: relative;
+        min-height: 240px;
+        padding: 24px;
+        border-radius: var(--radius-lg);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        overflow: hidden;
+      }
+
+      .feature::before {
+        content: "";
+        position: absolute;
+        inset: auto -20% -30% auto;
+        width: 180px;
+        height: 180px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(142, 255, 43, 0.2), transparent 70%);
+      }
+
+      .feature-index {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        background: rgba(142, 255, 43, 0.12);
+        color: var(--green);
+        font-weight: 800;
+      }
+
+      .feature h3 {
+        margin-top: 18px;
+        font-size: 1.28rem;
+      }
+
+      .feature p {
+        margin: 10px 0 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .showcase {
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 20px;
+      }
+
+      .card {
+        border-radius: var(--radius-xl);
+        background: var(--panel);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        padding: 28px;
+        box-shadow: var(--shadow);
+      }
+
+      .card h3 {
+        font-size: 1.55rem;
+      }
+
+      .card p {
+        color: var(--muted);
+        line-height: 1.68;
+      }
+
+      .week-grid {
+        display: grid;
+        gap: 14px;
+        margin-top: 24px;
+      }
+
+      .week-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 16px 18px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .week-row strong {
+        display: block;
+        font-size: 1rem;
+      }
+
+      .week-row span {
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 12px;
+        border-radius: 999px;
+        background: rgba(142, 255, 43, 0.1);
+        color: #d3ffc2;
+        font-size: 0.9rem;
+        font-weight: 700;
+      }
+
+      .quote-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .quote {
+        padding: 26px;
+        border-radius: var(--radius-lg);
+        background: linear-gradient(180deg, rgba(18, 26, 18, 0.94), rgba(8, 10, 8, 0.92));
+        border: 1px solid rgba(142, 255, 43, 0.1);
+      }
+
+      .quote p {
+        margin: 0;
+        color: #edf3ed;
+        line-height: 1.75;
+      }
+
+      .quote footer {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 20px;
+      }
+
+      .quote-avatar {
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #b8ff49, #2e8c19);
+        color: #091008;
+        display: grid;
+        place-items: center;
+        font-weight: 800;
+      }
+
+      .quote cite {
+        font-style: normal;
+        font-weight: 700;
+      }
+
+      .quote small {
+        display: block;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+
+      .faq-list {
+        display: grid;
+        gap: 14px;
+      }
+
+      details {
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 18px 20px;
+      }
+
+      summary {
+        cursor: pointer;
+        list-style: none;
+        font-weight: 700;
+      }
+
+      summary::-webkit-details-marker {
+        display: none;
+      }
+
+      details p {
+        margin: 14px 0 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .cta {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .cta::before {
+        content: "";
+        position: absolute;
+        inset: auto -8% -30% auto;
+        width: 300px;
+        height: 300px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(142, 255, 43, 0.28), transparent 72%);
+      }
+
+      .cta-content {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 28px;
+      }
+
+      .cta h2 {
+        font-family: "Teko", sans-serif;
+        font-size: clamp(2.8rem, 6vw, 5rem);
+        line-height: 0.95;
+        text-transform: uppercase;
+      }
+
+      .cta p {
+        margin-top: 14px;
+        max-width: 650px;
+        color: #d6ddd6;
+        font-size: 1.06rem;
+        line-height: 1.65;
+      }
+
+      .footer {
+        padding: 26px 0 48px;
+        color: var(--muted);
+      }
+
+      .footer-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+        padding-top: 24px;
+      }
+
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(12px);
+        }
+
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 1080px) {
+        .hero-grid,
+        .showcase,
+        .cta-content {
+          grid-template-columns: 1fr;
+        }
+
+        .feature-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .quote-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .phone-card {
+          margin: 0 auto;
+        }
+
+        .section-heading {
+          align-items: start;
+          flex-direction: column;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .nav-inner,
+        .footer-inner {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .nav-links {
+          flex-wrap: wrap;
+          gap: 16px;
+        }
+
+        .hero {
+          padding-top: 30px;
+        }
+
+        .hero-stats,
+        .feature-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .phone-stage {
+          min-height: auto;
+        }
+
+        .phone-card {
+          width: 100%;
+        }
+
+        .button {
+          width: 100%;
+        }
+
+        .hero-actions {
+          display: grid;
+          grid-template-columns: 1fr;
+        }
+
+        .chat {
+          padding: 14px;
+        }
+
+        .card,
+        .quote,
+        .feature {
+          padding: 22px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="nav">
+      <div class="shell nav-inner">
+        <a class="brand" href="#top" aria-label="FitLog">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-text">
+            <span class="brand-title">
+              <span class="muted">Fit</span><span class="accent">Log</span>
+            </span>
+            <span class="brand-subtitle">Treino no WhatsApp</span>
+          </span>
+        </a>
+        <div class="nav-links">
+          <a href="#funciona">Como funciona</a>
+          <a href="#beneficios">Benefícios</a>
+          <a href="#depoimentos">Depoimentos</a>
+          <a class="button button-primary" href="#cta">Quero testar</a>
+        </div>
+      </div>
+    </nav>
+
+    <main id="top">
+      <section class="hero">
+        <div class="shell hero-grid">
+          <div>
+            <div class="eyebrow">Seu treino salvo em segundos</div>
+            <h1>
+              O assistente de academia que vive no seu
+              <span>WhatsApp</span>
+            </h1>
+            <p class="hero-copy">
+              Fale como você já fala com seus amigos. O FitLog registra seus
+              exercícios, mostra o treino do dia, resume sua semana e ajuda a
+              acompanhar evolução, cargas e consistência sem planilha chata e
+              sem abrir vários apps.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="#cta">Começar agora</a>
+              <a class="button button-secondary" href="#funciona">Ver como funciona</a>
+            </div>
+            <div class="hero-stats">
+              <div class="stat">
+                <strong>1 áudio</strong>
+                <span>para salvar vários exercícios</span>
+              </div>
+              <div class="stat">
+                <strong>24/7</strong>
+                <span>acesso ao seu histórico</span>
+              </div>
+              <div class="stat">
+                <strong>+ foco</strong>
+                <span>na evolução da semana</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="phone-stage">
+            <div class="glow-ring" aria-hidden="true"></div>
+            <div class="phone-card">
+              <div class="phone-bar">
+                <div class="phone-avatar" aria-hidden="true"></div>
+                <div class="phone-title">
+                  <strong>FitLog</strong>
+                  <span>online agora</span>
+                </div>
+              </div>
+              <div class="chat">
+                <div class="bubble user">
+                  supino reto 3 de 12 com 25kg, elevação lateral 3 de 12 com
+                  12kg
+                </div>
+                <div class="bubble bot" style="animation-delay: 120ms">
+                  <strong>Treino salvo.</strong><br />
+                  1. Supino Reto - 3x12 - 25kg<br />
+                  2. Elevação Lateral - 3x12 - 12kg
+                </div>
+                <div class="bubble user" style="animation-delay: 220ms">
+                  o que treinei essa semana?
+                </div>
+                <div class="bubble bot" style="animation-delay: 320ms">
+                  <strong>Resumo semanal:</strong><br />
+                  18 exercícios em 4 dias.<br />
+                  Seu melhor supino da semana: 30kg.<br />
+                  Treino mais consistente: peito e ombro.
+                </div>
+                <div class="chat-input">
+                  <span>Digite ou envie áudio...</span>
+                  <button aria-label="Enviar">➜</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="funciona">
+        <div class="shell">
+          <div class="section-heading">
+            <h2>Menos planilha. Mais treino.</h2>
+            <p>
+              O FitLog foi feito para quem quer constância real. Você registra
+              tudo no WhatsApp e recebe respostas rápidas para continuar
+              treinando com contexto e clareza.
+            </p>
+          </div>
+
+          <div class="feature-grid">
+            <article class="feature">
+              <div class="feature-index">01</div>
+              <h3>Registre por texto ou áudio</h3>
+              <p>
+                Fale naturalmente: exercício, séries, repetições, peso e até
+                vários movimentos na mesma mensagem.
+              </p>
+            </article>
+            <article class="feature">
+              <div class="feature-index">02</div>
+              <h3>Consulte treino do dia</h3>
+              <p>
+                Pergunte “o que treinei hoje?” e veja sua lista organizada com
+                os exercícios salvos em ordem.
+              </p>
+            </article>
+            <article class="feature">
+              <div class="feature-index">03</div>
+              <h3>Acompanhe a semana</h3>
+              <p>
+                Receba um resumo por dia e por semana para enxergar volume,
+                frequência e evolução sem esforço.
+              </p>
+            </article>
+            <article class="feature">
+              <div class="feature-index">04</div>
+              <h3>Corrija sem dor de cabeça</h3>
+              <p>
+                Errou o peso, a ordem ou o exercício? Corrija pelo próprio chat
+                e mantenha seus dados limpos.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="beneficios">
+        <div class="shell showcase">
+          <article class="card">
+            <span class="pill">Feito para rotina real de academia</span>
+            <h3 style="margin-top: 18px">Seu histórico trabalha por você</h3>
+            <p>
+              O FitLog transforma mensagens simples em dados úteis para sua
+              rotina. Você sabe o que treinou, quanto levantou, quando foi seu
+              último treino e como a semana está rendendo.
+            </p>
+            <div class="week-grid">
+              <div class="week-row">
+                <div>
+                  <strong>Treino de hoje</strong>
+                  <span>Confira tudo que já foi salvo</span>
+                </div>
+                <span class="pill">3 exercícios</span>
+              </div>
+              <div class="week-row">
+                <div>
+                  <strong>Resumo semanal</strong>
+                  <span>Visualize frequência e consistência</span>
+                </div>
+                <span class="pill">4 dias</span>
+              </div>
+              <div class="week-row">
+                <div>
+                  <strong>Evolução de carga</strong>
+                  <span>Compare seu progresso por exercício</span>
+                </div>
+                <span class="pill">PR ativo</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <span class="pill">Para quem treina e quer acompanhar</span>
+            <h3 style="margin-top: 18px">Tudo no canal que você já usa</h3>
+            <p>
+              Em vez de depender de anotações soltas, o WhatsApp vira sua
+              central de treino. Ideal para alunos, pessoas ocupadas e quem quer
+              manter disciplina sem fricção.
+            </p>
+            <p>
+              Registre uma série no intervalo, consulte o treino indo embora da
+              academia e revise a semana no fim de domingo. Simples, rápido e
+              direto.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="depoimentos">
+        <div class="shell">
+          <div class="section-heading">
+            <h2>Quem usa, acompanha melhor</h2>
+            <p>
+              Alguns relatos ilustrativos do tipo de resultado que essa rotina
+              pode gerar quando o treino fica fácil de registrar e revisar.
+            </p>
+          </div>
+
+          <div class="quote-grid">
+            <article class="quote">
+              <p>
+                “Eu esquecia metade do treino depois que saía da academia. Com o
+                FitLog, comecei a salvar tudo por áudio e hoje consigo comparar
+                minhas cargas da semana sem abrir planilha.”
+              </p>
+              <footer>
+                <div class="quote-avatar">RB</div>
+                <div>
+                  <cite>Rafael Barbosa</cite>
+                  <small>Aluno de musculação</small>
+                </div>
+              </footer>
+            </article>
+
+            <article class="quote">
+              <p>
+                “O que mais ajudou foi enxergar constância. Eu mandava o treino
+                no WhatsApp e depois pedia o resumo da semana. Isso me deu mais
+                noção dos dias que eu realmente estava rendendo.”
+              </p>
+              <footer>
+                <div class="quote-avatar">CM</div>
+                <div>
+                  <cite>Camila Moura</cite>
+                  <small>Treina 5x por semana</small>
+                </div>
+              </footer>
+            </article>
+
+            <article class="quote">
+              <p>
+                “Antes eu anotava em bloco de notas e nunca achava nada. Agora
+                pergunto meu último treino, corrijo peso se precisar e acompanho
+                meus dados em segundos. Ficou muito mais organizado.”
+              </p>
+              <footer>
+                <div class="quote-avatar">LS</div>
+                <div>
+                  <cite>Larissa Souza</cite>
+                  <small>Foco em hipertrofia</small>
+                </div>
+              </footer>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="shell">
+          <div class="section-heading">
+            <h2>Dúvidas rápidas</h2>
+            <p>
+              A proposta é ser simples: menos tempo registrando, mais tempo
+              treinando.
+            </p>
+          </div>
+          <div class="faq-list">
+            <details open>
+              <summary>Preciso baixar outro aplicativo?</summary>
+              <p>
+                Não. O FitLog funciona no WhatsApp, então sua rotina continua no
+                app que você já usa todos os dias.
+              </p>
+            </details>
+            <details>
+              <summary>Ele serve só para registrar treino?</summary>
+              <p>
+                Não. Além de salvar exercícios, ele mostra histórico, consulta
+                treinos do dia, resume sua semana e ajuda a acompanhar evolução.
+              </p>
+            </details>
+            <details>
+              <summary>Posso mandar vários exercícios em uma mensagem?</summary>
+              <p>
+                Sim. Você pode digitar ou mandar áudio com vários exercícios na
+                mesma mensagem para agilizar o registro.
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="shell card cta" id="cta">
+          <div class="cta-content">
+            <div>
+              <span class="pill">Pronto para vender no automático</span>
+              <h2>Transforme seu WhatsApp em um diário de treino inteligente</h2>
+              <p>
+                Mostre ao aluno que acompanhar treino não precisa ser complicado.
+                O FitLog organiza a rotina, incentiva consistência e entrega
+                contexto útil para quem quer melhorar resultado e manter foco.
+              </p>
+            </div>
+            <a class="button button-primary" href="https://wa.me/" target="_blank" rel="noreferrer">
+              Falar no WhatsApp
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="shell footer-inner">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-text">
+            <span class="brand-title">
+              <span class="muted">Fit</span><span class="accent">Log</span>
+            </span>
+            <span class="brand-subtitle">Seu treino salvo com contexto</span>
+          </span>
+        </div>
+        <span>© 2026 FitLog. Organização, evolução e consistência no WhatsApp.</span>
+      </div>
+    </footer>
+  </body>
+</html>
