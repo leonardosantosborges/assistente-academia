@@ -31,6 +31,7 @@ const {
   normalizeExercise,
   getMuscleGroup,
   getSuggestions,
+  isKnownExercise,
 } = require("../utils/exercises");
 
 async function isDuplicateWebhook(messageId) {
@@ -137,6 +138,84 @@ async function insertWorkouts(rows) {
     );
     throw error;
   }
+}
+
+const ALLOWED_MUSCLE_GROUPS = [
+  "Peito",
+  "Costas",
+  "Biceps",
+  "Triceps",
+  "Ombro",
+  "Perna",
+  "Gluteo",
+  "Abdomen",
+  "Cardio",
+  "Funcional",
+];
+
+async function askClaudeMuscleGroup(exerciseName) {
+  const response = await axios.post(
+    "https://api.anthropic.com/v1/messages",
+    {
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 80,
+      system: `Classifique o exercicio informado em apenas um grupo muscular. Responda SOMENTE com uma destas opcoes exatas: ${ALLOWED_MUSCLE_GROUPS.join(", ")}. Se for ambiguo, escolha o grupo principal do movimento.`,
+      messages: [
+        {
+          role: "user",
+          content: exerciseName,
+        },
+      ],
+    },
+    {
+      headers: {
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+    },
+  );
+
+  const text = String(response.data?.content?.[0]?.text || "").trim();
+  return ALLOWED_MUSCLE_GROUPS.includes(text) ? text : null;
+}
+
+async function resolveExerciseRecord(exerciseName) {
+  const normalizedExercise = normalizeExercise(exerciseName);
+  const knownGroup = isKnownExercise(normalizedExercise)
+    ? getMuscleGroup(normalizedExercise)
+    : null;
+
+  if (knownGroup) {
+    return {
+      exercise: normalizedExercise,
+      muscleGroup: knownGroup,
+      inferredByClaude: false,
+    };
+  }
+
+  try {
+    const inferredGroup = await askClaudeMuscleGroup(normalizedExercise);
+
+    if (inferredGroup) {
+      return {
+        exercise: normalizedExercise,
+        muscleGroup: inferredGroup,
+        inferredByClaude: true,
+      };
+    }
+  } catch (error) {
+    console.error(
+      "[CLAUDE] Erro ao inferir grupo muscular:",
+      error.response?.data || error.message || error,
+    );
+  }
+
+  return {
+    exercise: normalizedExercise,
+    muscleGroup: null,
+    inferredByClaude: false,
+  };
 }
 
 function getIncomingText(reqBody) {
@@ -410,21 +489,22 @@ async function saveWorkout(phone, data, daysAgo = 0) {
   const date = new Date();
   date.setDate(date.getDate() - daysAgo);
   date.setHours(12, 0, 0, 0);
-  const normalizedExercise = normalizeExercise(data.exercise);
+  const resolvedExercise = await resolveExerciseRecord(data.exercise);
 
   const row = {
     user_phone: phone,
-    exercise: normalizedExercise,
+    exercise: resolvedExercise.exercise,
     sets: data.sets,
     reps: data.reps,
     weight_kg: data.weight_kg || null,
     notes: data.notes || null,
     gym: data.gym || null,
-    muscle_group: getMuscleGroup(normalizedExercise),
+    muscle_group: resolvedExercise.muscleGroup,
     ...(daysAgo > 0 ? { created_at: date.toISOString() } : {}),
   };
 
   await insertWorkouts([row]);
+  return resolvedExercise;
 }
 
 async function saveMultipleWorkouts(phone, workouts, daysAgo = 0, gym = null) {
@@ -432,21 +512,26 @@ async function saveMultipleWorkouts(phone, workouts, daysAgo = 0, gym = null) {
   date.setDate(date.getDate() - daysAgo);
   date.setHours(12, 0, 0, 0);
 
-  const rows = workouts.map((w) => {
-    const ne = normalizeExercise(w.exercise);
+  const resolvedWorkouts = await Promise.all(
+    workouts.map((w) => resolveExerciseRecord(w.exercise)),
+  );
+
+  const rows = workouts.map((w, index) => {
+    const resolved = resolvedWorkouts[index];
     return {
       user_phone: phone,
-      exercise: ne,
+      exercise: resolved.exercise,
       sets: w.sets,
       reps: w.reps,
       weight_kg: w.weight_kg || null,
       gym: w.gym || gym || null,
-      muscle_group: getMuscleGroup(ne),
+      muscle_group: resolved.muscleGroup,
       ...(daysAgo > 0 ? { created_at: date.toISOString() } : {}),
     };
   });
 
   await insertWorkouts(rows);
+  return resolvedWorkouts;
 }
 
 async function getLastSessionByMuscleGroup(phone, muscleGroup) {
@@ -552,9 +637,9 @@ async function updateLastWorkout(phone, exercise, newData) {
   };
 
   if (newData.new_exercise) {
-    const ne = normalizeExercise(newData.new_exercise);
-    updateFields.exercise = ne;
-    updateFields.muscle_group = getMuscleGroup(ne);
+    const resolvedExercise = await resolveExerciseRecord(newData.new_exercise);
+    updateFields.exercise = resolvedExercise.exercise;
+    updateFields.muscle_group = resolvedExercise.muscleGroup;
   }
 
   await supabase.from("workouts").update(updateFields).eq("id", current.id);
@@ -580,9 +665,9 @@ async function updateWorkoutById(id, newData) {
   };
 
   if (newData.new_exercise) {
-    const ne = normalizeExercise(newData.new_exercise);
-    updateFields.exercise = ne;
-    updateFields.muscle_group = getMuscleGroup(ne);
+    const resolvedExercise = await resolveExerciseRecord(newData.new_exercise);
+    updateFields.exercise = resolvedExercise.exercise;
+    updateFields.muscle_group = resolvedExercise.muscleGroup;
   }
 
   await supabase.from("workouts").update(updateFields).eq("id", id);
@@ -985,7 +1070,7 @@ module.exports = async function handler(req, res) {
       const normalizedExercise = normalizeExercise(parsed.exercise);
       const history = await getWorkoutHistory(phone, normalizedExercise);
 
-      await saveWorkout(
+      const savedExercise = await saveWorkout(
         phone,
         { ...parsed, exercise: normalizedExercise },
         daysAgo,
@@ -993,7 +1078,7 @@ module.exports = async function handler(req, res) {
 
       const dayLabel =
         formatRelativeDayLabel(daysAgo);
-      const muscleGroup = getMuscleGroup(normalizedExercise);
+      const muscleGroup = savedExercise.muscleGroup;
 
       let msg = `✅ *${normalizedExercise}* - ${parsed.sets}x${parsed.reps}${parsed.weight_kg ? ` - ${parsed.weight_kg}kg` : ""} salvo (${dayLabel}), ${user.name}!`;
       if (muscleGroup) msg += `\n💪 Grupo: ${muscleGroup}`;
@@ -1060,7 +1145,11 @@ module.exports = async function handler(req, res) {
         exercise: normalizeExercise(w.exercise),
       }));
 
-      await saveMultipleWorkouts(phone, normalized, daysAgo);
+      const resolvedWorkouts = await saveMultipleWorkouts(
+        phone,
+        normalized,
+        daysAgo,
+      );
 
       const dayLabel =
         daysAgo === 0
