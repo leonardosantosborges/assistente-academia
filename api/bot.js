@@ -1006,6 +1006,15 @@ function formatWorkout(w, index) {
   return `${num}*${w.exercise}*${detail ? ` - ${detail}` : ""}${gym}`;
 }
 
+function formatPace(secondsPerKm) {
+  if (!secondsPerKm) return null;
+  const totalSeconds = Number(secondsPerKm);
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return null;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = Math.round(totalSeconds % 60);
+  return `${minutes}:${String(seconds).padStart(2, "0")}/km`;
+}
+
 function formatWaterBar(totalMl, goalMl) {
   const pct =
     goalMl > 0 ? Math.min(Math.round((totalMl / goalMl) * 100), 100) : 0;
@@ -1178,6 +1187,9 @@ module.exports = async function handler(req, res) {
         const lastWeight = lastEntry.weight_kg ?? null;
         const lastReps = lastEntry.reps ?? null;
         const lastSets = lastEntry.sets ?? null;
+        const lastDuration = lastEntry.duration_minutes ?? null;
+        const lastDistance = lastEntry.distance_km ?? null;
+        const lastPace = lastEntry.pace_seconds_per_km ?? null;
         const maxWeight = withWeight.length
           ? Math.max(...withWeight.map((w) => w.weight_kg))
           : null;
@@ -1216,6 +1228,50 @@ module.exports = async function handler(req, res) {
             msg += `\n📈 +${setDiff} série${setDiff > 1 ? "s" : ""} a mais!`;
           else
             msg += `\n📉 ${Math.abs(setDiff)} série${Math.abs(setDiff) > 1 ? "s" : ""} a menos.`;
+        }
+
+        if (
+          parsed.duration_minutes !== undefined &&
+          parsed.duration_minutes !== null &&
+          lastDuration !== null
+        ) {
+          const durationDiff = Number(parsed.duration_minutes) - Number(lastDuration);
+          if (durationDiff > 0)
+            msg += `\nTempo: +${durationDiff}min em relação ao último treino!`;
+          else if (durationDiff < 0)
+            msg += `\nTempo: ${Math.abs(durationDiff)}min a menos que no último treino.`;
+          else
+            msg += `\nTempo: igual ao último treino.`;
+        }
+
+        if (
+          parsed.distance_km !== undefined &&
+          parsed.distance_km !== null &&
+          lastDistance !== null
+        ) {
+          const distanceDiff =
+            Number(parsed.distance_km) - Number(lastDistance);
+          if (distanceDiff > 0)
+            msg += `\nDistância: +${distanceDiff.toFixed(2)}km em relação ao último treino!`;
+          else if (distanceDiff < 0)
+            msg += `\nDistância: ${Math.abs(distanceDiff).toFixed(2)}km a menos que no último treino.`;
+          else
+            msg += `\nDistância: igual à do último treino.`;
+        }
+
+        if (
+          parsed.pace_seconds_per_km !== undefined &&
+          parsed.pace_seconds_per_km !== null &&
+          lastPace !== null
+        ) {
+          const paceDiff =
+            Number(parsed.pace_seconds_per_km) - Number(lastPace);
+          if (paceDiff < 0)
+            msg += `\nPace: melhorou de ${formatPace(lastPace)} para ${formatPace(parsed.pace_seconds_per_km)}.`;
+          else if (paceDiff > 0)
+            msg += `\nPace: ficou mais lento de ${formatPace(lastPace)} para ${formatPace(parsed.pace_seconds_per_km)}.`;
+          else
+            msg += `\nPace: igual ao último treino.`;
         }
 
         if (history.length >= 3)
