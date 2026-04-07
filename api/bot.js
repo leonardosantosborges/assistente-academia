@@ -164,6 +164,35 @@ async function insertWorkouts(rows) {
   }
 }
 
+function parseNullableNumber(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildWorkoutMetrics(data, current = {}) {
+  return {
+    sets: data.sets ?? current.sets ?? null,
+    reps: data.reps ?? current.reps ?? null,
+    weight_kg:
+      data.weight_kg !== undefined
+        ? parseNullableNumber(data.weight_kg)
+        : (current.weight_kg ?? null),
+    duration_minutes:
+      data.duration_minutes !== undefined
+        ? parseNullableNumber(data.duration_minutes)
+        : (current.duration_minutes ?? null),
+    distance_km:
+      data.distance_km !== undefined
+        ? parseNullableNumber(data.distance_km)
+        : (current.distance_km ?? null),
+    pace_seconds_per_km:
+      data.pace_seconds_per_km !== undefined
+        ? parseNullableNumber(data.pace_seconds_per_km)
+        : (current.pace_seconds_per_km ?? null),
+  };
+}
+
 const ALLOWED_MUSCLE_GROUPS = [
   "Peito",
   "Costas",
@@ -514,13 +543,17 @@ async function saveWorkout(phone, data, daysAgo = 0) {
   date.setDate(date.getDate() - daysAgo);
   date.setHours(12, 0, 0, 0);
   const resolvedExercise = await resolveExerciseRecord(data.exercise);
+  const metrics = buildWorkoutMetrics(data);
 
   const row = {
     user_phone: phone,
     exercise: resolvedExercise.exercise,
-    sets: data.sets,
-    reps: data.reps,
-    weight_kg: data.weight_kg || null,
+    sets: metrics.sets,
+    reps: metrics.reps,
+    weight_kg: metrics.weight_kg,
+    duration_minutes: metrics.duration_minutes,
+    distance_km: metrics.distance_km,
+    pace_seconds_per_km: metrics.pace_seconds_per_km,
     notes: data.notes || null,
     gym: data.gym || null,
     muscle_group: resolvedExercise.muscleGroup,
@@ -542,12 +575,16 @@ async function saveMultipleWorkouts(phone, workouts, daysAgo = 0, gym = null) {
 
   const rows = workouts.map((w, index) => {
     const resolved = resolvedWorkouts[index];
+    const metrics = buildWorkoutMetrics(w);
     return {
       user_phone: phone,
       exercise: resolved.exercise,
-      sets: w.sets,
-      reps: w.reps,
-      weight_kg: w.weight_kg || null,
+      sets: metrics.sets,
+      reps: metrics.reps,
+      weight_kg: metrics.weight_kg,
+      duration_minutes: metrics.duration_minutes,
+      distance_km: metrics.distance_km,
+      pace_seconds_per_km: metrics.pace_seconds_per_km,
       gym: w.gym || gym || null,
       muscle_group: resolved.muscleGroup,
       ...(daysAgo > 0 ? { created_at: date.toISOString() } : {}),
@@ -638,7 +675,7 @@ async function deleteWorkoutById(id) {
 async function updateLastWorkout(phone, exercise, newData) {
   let query = supabase
     .from("workouts")
-    .select("id, exercise, sets, reps, weight_kg")
+    .select("*")
     .eq("user_phone", phone)
     .order("created_at", { ascending: false })
     .limit(1);
@@ -651,14 +688,7 @@ async function updateLastWorkout(phone, exercise, newData) {
   if (!data?.length) return null;
 
   const current = data[0];
-  const updateFields = {
-    sets: newData.sets ?? current.sets,
-    reps: newData.reps ?? current.reps,
-    weight_kg:
-      newData.weight_kg !== undefined
-        ? newData.weight_kg || null
-        : current.weight_kg,
-  };
+  const updateFields = buildWorkoutMetrics(newData, current);
 
   if (newData.new_exercise) {
     const resolvedExercise = await resolveExerciseRecord(newData.new_exercise);
@@ -679,14 +709,7 @@ async function updateWorkoutById(id, newData) {
 
   if (!current) return null;
 
-  const updateFields = {
-    sets: newData.sets ?? current.sets,
-    reps: newData.reps ?? current.reps,
-    weight_kg:
-      newData.weight_kg !== undefined
-        ? newData.weight_kg || null
-        : current.weight_kg,
-  };
+  const updateFields = buildWorkoutMetrics(newData, current);
 
   if (newData.new_exercise) {
     const resolvedExercise = await resolveExerciseRecord(newData.new_exercise);
@@ -810,6 +833,15 @@ Registrar exercício de dia anterior:
 Exercícios sem peso:
 {"action":"save_workout","exercise":"abdominal","sets":3,"reps":20,"days_ago":0}
 
+Cardio por tempo:
+{"action":"save_workout","exercise":"esteira","duration_minutes":30,"days_ago":0}
+
+Cardio por distância:
+{"action":"save_workout","exercise":"corrida","distance_km":5,"days_ago":0}
+
+Cardio com pace:
+{"action":"save_workout","exercise":"corrida","distance_km":5,"pace_seconds_per_km":320,"days_ago":0}
+
 Múltiplos exercícios:
 {"action":"save_multiple","workouts":[{"exercise":"supino","sets":3,"reps":12,"weight_kg":25},{"exercise":"rosca","sets":4,"reps":10,"weight_kg":15}],"days_ago":0}
 
@@ -853,6 +885,7 @@ Alterar último registro — inclua APENAS os campos que o usuário mencionou ex
 {"action":"update_last","exercise":"supino","sets":2,"reps":9}
 Se o usuário disse apenas "troca para 7,5kg", envie somente: {"action":"update_last","weight_kg":7.5}
 Se o usuário disse apenas "troca para 2x9", envie somente: {"action":"update_last","sets":2,"reps":9}
+Se o usuário corrigiu cardio, envie somente os campos citados, por exemplo: {"action":"update_last","duration_minutes":35} ou {"action":"update_last","distance_km":6,"pace_seconds_per_km":330}
 
 Trocar exercício por outro:
 {"action":"update_last","exercise":"pulley","new_exercise":"puxada aberta"}
@@ -954,7 +987,23 @@ function formatWorkout(w, index) {
   const weight = w.weight_kg ? ` - ${w.weight_kg}kg` : "";
   const gym = w.gym ? ` (${w.gym})` : "";
   const num = index !== undefined ? `${index + 1}. ` : "";
-  return `${num}*${w.exercise}* - ${w.sets}x${w.reps}${weight}${gym}`;
+  const duration =
+    w.duration_minutes ? `${w.duration_minutes}min` : null;
+  const distance =
+    w.distance_km !== null && w.distance_km !== undefined
+      ? `${w.distance_km}km`
+      : null;
+  const pace =
+    w.pace_seconds_per_km
+      ? `pace ${Math.floor(w.pace_seconds_per_km / 60)}:${String(
+          w.pace_seconds_per_km % 60,
+        ).padStart(2, "0")}/km`
+      : null;
+  const strength =
+    w.sets && w.reps ? `${w.sets}x${w.reps}${weight}` : null;
+  const detail = [strength, duration, distance, pace].filter(Boolean).join(" - ");
+
+  return `${num}*${w.exercise}*${detail ? ` - ${detail}` : ""}${gym}`;
 }
 
 function formatWaterBar(totalMl, goalMl) {
@@ -1111,8 +1160,16 @@ module.exports = async function handler(req, res) {
       const dayLabel =
         formatRelativeDayLabel(daysAgo);
       const muscleGroup = savedExercise.muscleGroup;
+      let msg = `Registro salvo: ${formatWorkout({
+        exercise: savedExercise.exercise,
+        sets: parsed.sets,
+        reps: parsed.reps,
+        weight_kg: parsed.weight_kg,
+        duration_minutes: parsed.duration_minutes,
+        distance_km: parsed.distance_km,
+        pace_seconds_per_km: parsed.pace_seconds_per_km,
+      })} salvo (${dayLabel}), ${user.name}!`;
 
-      let msg = `✅ *${normalizedExercise}* - ${parsed.sets}x${parsed.reps}${parsed.weight_kg ? ` - ${parsed.weight_kg}kg` : ""} salvo (${dayLabel}), ${user.name}!`;
       if (muscleGroup) msg += `\n💪 Grupo: ${muscleGroup}`;
 
       if (history.length > 0) {
@@ -1189,7 +1246,17 @@ module.exports = async function handler(req, res) {
           : daysAgo === 1
             ? "ontem"
             : `${daysAgo} dias atrás`;
-      const list = normalized.map((w, i) => formatWorkout(w, i)).join("\n");
+      const list = normalized
+        .map((w, i) =>
+          formatWorkout(
+            {
+              ...w,
+              exercise: resolvedWorkouts[i]?.exercise || w.exercise,
+            },
+            i,
+          ),
+        )
+        .join("\n");
 
       await sendWhatsApp(
         phone,
