@@ -16,6 +16,7 @@ const supabase = createClient(
 
 const ZAPI_URL = `https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE_ID}/token/${process.env.ZAPI_TOKEN}/send-text`;
 const APP_TIMEZONE = process.env.APP_TIMEZONE || "America/Sao_Paulo";
+const APP_UTC_OFFSET = process.env.APP_UTC_OFFSET || "-03:00";
 
 const DAY_NAMES = [
   "Domingo",
@@ -120,12 +121,15 @@ function getDateRangeForDaysAgo(daysAgo = 0) {
   const baseDate = new Date();
   baseDate.setDate(baseDate.getDate() - daysAgo);
 
-  const start = getDateStringInTimezone(baseDate);
+  const startDate = getDateStringInTimezone(baseDate);
   const endDate = new Date(baseDate);
   endDate.setDate(endDate.getDate() + 1);
-  const end = getDateStringInTimezone(endDate);
+  const endDateString = getDateStringInTimezone(endDate);
 
-  return { start, end };
+  return {
+    start: `${startDate}T00:00:00${APP_UTC_OFFSET}`,
+    end: `${endDateString}T00:00:00${APP_UTC_OFFSET}`,
+  };
 }
 
 async function insertWorkouts(rows) {
@@ -681,8 +685,8 @@ async function getWorkoutsByDate(phone, exercise, daysAgo) {
     .from("workouts")
     .select("*")
     .eq("user_phone", phone)
-    .gte("created_at", `${start}T00:00:00`)
-    .lt("created_at", `${end}T00:00:00`)
+    .gte("created_at", start)
+    .lt("created_at", end)
     .order("created_at", { ascending: true });
 
   if (exercise) {
