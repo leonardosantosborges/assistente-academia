@@ -84,9 +84,11 @@ function removeJsonFromText(text) {
 }
 
 function formatDateLabel(dateStr) {
-  const date = new Date(dateStr);
+  const date = parseWorkoutDate(dateStr);
   const dayName = DAY_NAMES[date.getDay()];
-  const formatted = date.toLocaleDateString("pt-BR");
+  const formatted = date.toLocaleDateString("pt-BR", {
+    timeZone: APP_TIMEZONE,
+  });
   return `${dayName} - ${formatted}`;
 }
 
@@ -117,14 +119,32 @@ function getDateStringInTimezone(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+function parseWorkoutDate(dateValue) {
+  if (dateValue instanceof Date) return dateValue;
+
+  const raw = String(dateValue || "").trim();
+  if (!raw) return new Date(NaN);
+
+  const hasTimezone = /(?:Z|[+-]\d{2}:\d{2})$/.test(raw);
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  return new Date(hasTimezone ? normalized : `${normalized}Z`);
+}
+
+function isSameLocalDate(dateValue, targetDateString) {
+  return getDateStringInTimezone(parseWorkoutDate(dateValue)) === targetDateString;
+}
+
 function getDateRangeForDaysAgo(daysAgo = 0) {
   const baseDate = new Date();
   baseDate.setDate(baseDate.getDate() - daysAgo);
 
-  const startDate = getDateStringInTimezone(baseDate);
-  const endDate = new Date(baseDate);
-  endDate.setDate(endDate.getDate() + 1);
-  const endDateString = getDateStringInTimezone(endDate);
+  const startQueryDate = new Date(baseDate);
+  startQueryDate.setDate(startQueryDate.getDate() - 1);
+  const endQueryDate = new Date(baseDate);
+  endQueryDate.setDate(endQueryDate.getDate() + 2);
+
+  const startDate = getDateStringInTimezone(startQueryDate);
+  const endDateString = getDateStringInTimezone(endQueryDate);
 
   return {
     start: `${startDate}T00:00:00${APP_UTC_OFFSET}`,
@@ -549,8 +569,8 @@ async function getLastSessionByMuscleGroup(phone, muscleGroup) {
 
   if (!data?.length) return [];
 
-  const lastDate = new Date(data[0].created_at).toDateString();
-  return data.filter((w) => new Date(w.created_at).toDateString() === lastDate);
+  const lastDate = getDateStringInTimezone(parseWorkoutDate(data[0].created_at));
+  return data.filter((w) => isSameLocalDate(w.created_at, lastDate));
 }
 
 async function getWorkoutsByGym(phone, gym, exercise) {
@@ -680,6 +700,9 @@ async function updateWorkoutById(id, newData) {
 
 async function getWorkoutsByDate(phone, exercise, daysAgo) {
   const { start, end } = getDateRangeForDaysAgo(daysAgo);
+  const targetDate = getDateStringInTimezone(
+    new Date(Date.now() - daysAgo * 86400000),
+  );
 
   let query = supabase
     .from("workouts")
@@ -694,7 +717,9 @@ async function getWorkoutsByDate(phone, exercise, daysAgo) {
   }
 
   const { data } = await query;
-  return data || [];
+  return (data || []).filter((workout) =>
+    isSameLocalDate(workout.created_at, targetDate),
+  );
 }
 
 async function getWeeklySummary(phone) {
@@ -708,7 +733,10 @@ async function getWeeklySummary(phone) {
     .gte("created_at", weekAgo.toISOString())
     .order("created_at", { ascending: true });
 
-  return data || [];
+  return (data || []).filter((workout) => {
+    const workoutDate = parseWorkoutDate(workout.created_at);
+    return workoutDate >= weekAgo;
+  });
 }
 
 // ── Hidratação ────────────────────────────────────────────────
